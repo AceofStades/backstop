@@ -1,0 +1,22 @@
+# Environment / secrets
+.env
+.env.local
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Runtime artifacts
+*.db
+*.sqlite3
+data/runs/
+reports/
