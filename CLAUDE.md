@@ -20,6 +20,7 @@ uv sync --extra dev
 uv run razor-pay verify          # preflight: test-mode interlock, API reachability, ledger triggers
 uv run razor-pay seed --cases 400 # build a batch (creates real test-mode Orders)
 uv run razor-pay run              # run the loop, write reports/<batch>.md and .json
+uv run razor-pay replicate --runs 12  # pooled headline across independent batches
 uv run razor-pay report           # print the saved report
 uv run razor-pay audit pf_0000    # full append-only audit trail for one case
 uv run razor-pay demo-refusals    # the four gate-refusal scenarios
@@ -115,6 +116,12 @@ repeat customers vanish and silently disables this check.
 **Report incremental, never gross.** Gross recovery counts cases that would have
 recovered anyway. The control baseline is an assumption, so the headline always ships
 with the sensitivity sweep alongside it.
+
+**One batch is one draw.** Single-batch lift varies ±5 pp around the pooled mean
+(measured: +18.8 to +29.8 across seeds). Any headline quoted publicly must come from
+`razor-pay replicate`, never from whichever batch ran last — a single-batch number
+was quoted once and a clean re-run produced something 13 pp lower. Per-batch reports
+are fine for inspecting behaviour; they are not the result.
 
 **The ledger is append-only, enforced by SQLite triggers.** `UPDATE`/`DELETE` raise.
 Corrections are new rows. Idempotency keys are `<case_id>:<attempt_no>` under a unique

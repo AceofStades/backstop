@@ -273,5 +273,5 @@ messaged.
 | `config.py` | 61 | Settings and the test-mode interlock |
 | `cli.py` | 304 | Six commands |
 | `adapters/` | 391 | Three leaks + registration plumbing |
-| `harness/` | 887 | Assignment, response model, runner, metrics, scenarios |
-| `tests/` | 570 | 122 tests |
+| `harness/` | 1050 | Assignment, response model, runner, metrics, replication, scenarios |
+| `tests/` | 700 | 130 tests |

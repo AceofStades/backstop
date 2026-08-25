@@ -245,6 +245,107 @@ before concluding the guard is unnecessary.
 
 ---
 
+## Bug 8 — the two-batch flow the error message recommends
+
+**Found by** following the project's own advice.
+
+`run` refuses to re-run a completed batch and says "seed a fresh batch". Doing
+exactly that crashed:
+
+```
+sqlite3.IntegrityError: UNIQUE constraint failed: cases.case_id
+```
+
+**Cause.** Case ids were `pf_0000`, `pf_0001`, … regenerated identically for every
+batch, and `cases.case_id` is a primary key.
+
+**Why it mattered beyond the crash.** The ledger joins on `case_id` alone. Repeated
+ids across batches would have made one batch's contacts count against another
+batch's customer contact budget — silently wrong rather than loudly broken, which
+is worse.
+
+**Fix.** Case ids carry the batch's time token: `pf_134512_0000`. `audit` gained a
+resolver so short ids still work, preferring the current batch.
+
+That resolver had a bug of its own: `_` is a single-character wildcard in SQL
+`LIKE`, so an unescaped `pf_0000` matched nothing at all rather than matching
+`pf_134512_0000`. Escaped now, with `test_partial_case_id_resolves_despite_underscore_wildcard`
+pinning it.
+
+---
+
+## Bug 9 — a compliance window scoped to a batch
+
+**Found by** running two batches back to back once Bug 8 was fixed.
+
+The per-customer contact budget filtered on `batch_id`. So a customer contacted
+four times in batch A had a full budget again in batch B, minutes later.
+
+**Why it mattered.** A customer does not experience batch boundaries. Four contacts
+yesterday and four today is eight contacts to them, however the runs were
+organised — and that is the regulator's view too. Batch scoping made the budget an
+accounting artifact rather than a protection.
+
+**Fix.** The window is wall-clock across the whole ledger. The effect is immediate
+and visible: the second batch now refuses 14 contacts that the first batch's
+activity had already spent, up from 1.
+
+---
+
+## Bug 10 — a preflight check that could not fail correctly
+
+**Found by** running `verify` on a fresh database.
+
+```
+Append-only ledger: FAIL (delete succeeded)
+```
+
+**Cause.** The probe ran `DELETE FROM ledger` on an **empty** table. A
+`BEFORE DELETE` trigger fires per row, so with no rows it never fires, the delete
+"succeeds", and the check reports failure.
+
+**Why it mattered.** `verify` is the first command anyone runs, and it was
+reporting that the project's headline safety property was broken — on a correct
+system.
+
+**Fix.** Write a probe row inside a `SAVEPOINT`, assert both `UPDATE` and `DELETE`
+are refused, then roll back so the real ledger is untouched.
+
+---
+
+## Bug 11 — the headline was one draw, not a result
+
+**Found by** re-running the pipeline from clean and getting +17.0 pp where the
+README claimed +30.4 pp.
+
+**Investigation.** Ran 12 seeds at n=400:
+
+| | lift |
+|---|---|
+| mean | +26.1 pp |
+| sd | 4.4 pp |
+| range | +17.4 to +31.7 pp |
+
+**The finding.** Both numbers were honest draws from a process centred around +26.
+The README had quoted a lucky one. Any reviewer re-running a single batch would
+have landed somewhere else in that range and reasonably concluded the numbers were
+unreliable.
+
+Notably this was **not** a bug in the CI: each batch's own 95% interval is about
+the right width for the observed spread. The error was reporting a point estimate
+from one batch as though it were the result.
+
+**Fix.** `razor-pay replicate` runs independent batches and pools them, reporting
+the mean with a CI of the mean *and* the raw between-batch spread. The headline is
+now +24.7 pp (95% CI 22.8 to 26.6) over 12 batches, with the +18.8 to +29.8 range
+stated alongside so nobody is surprised by a single re-run.
+
+**Lesson.** The most dangerous number is the one that is individually defensible
+and collectively misleading. A confidence interval describes uncertainty *within* a
+sample; it says nothing about having picked the sample that flattered you.
+
+---
+
 ## Calibration: batch size
 
 Not a bug — a measurement that changed the defaults. Ran the full pipeline at four
@@ -265,7 +366,7 @@ for. Defaults are now 400 at 40%.
 
 ## What the tests actually guard
 
-122 tests, but a handful carry most of the weight:
+130 tests, but a handful carry most of the weight:
 
 | Test | Invariant |
 |---|---|
@@ -281,6 +382,10 @@ for. Defaults are now 400 at 40%.
 | `test_engine_belief_is_not_harness_truth` | The policy does not have perfect knowledge of the simulated customer |
 | `test_break_even_threshold_is_a_principle_not_a_tuning_knob` | Guards Bug 6 from being reintroduced |
 | `test_contact_budget_is_counted_across_cases_for_one_customer` | The per-customer cap actually spans cases |
+| `test_contact_budget_spans_batches` | Compliance windows are wall-clock, not batch-scoped |
+| `test_case_ids_are_unique_across_batches` | Two seeds do not collide (Bug 8) |
+| `test_partial_case_id_resolves_despite_underscore_wildcard` | `_` escaped in LIKE (Bug 8) |
+| `test_replication_is_deterministic` | The pooled headline is reproducible |
 
 Several are parametrized across every enum member, so adding a `RootCause`,
 `InterventionType` or `Channel` without handling it fails the suite rather than

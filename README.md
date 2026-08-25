@@ -13,22 +13,29 @@ layer, one append-only ledger.
 
 ## The claim
 
-On a 400-case batch, against a 162-case held-out control group:
+Pooled across **12 independent 400-case batches**, each with a ~40% held-out
+control arm:
 
 | | |
 |---|---|
-| **Incremental recovery** | **+30.4 pp** (95% CI +21.7 to +39.1) |
-| **Incremental money recovered** | **Rs 102,869** |
-| **Net value** (after action costs) | **Rs 100,297** |
-| Gross recovered in treatment | Rs 167,251 |
-| ...of which would have arrived anyway | Rs 64,381 |
-| Diagnosis accuracy vs ground truth | 95.0% over 238 cases |
-| Exceptions it could not resolve | 25 of 238 |
+| **Incremental recovery** | **+24.7 pp** (95% CI of the mean +22.8 to +26.6) |
+| Between-batch spread | sd 3.3 pp, range +18.8 to +29.8 |
+| **Mean net value per batch** | **Rs 88,839** (sd Rs 20,951) |
+| Diagnosis accuracy vs ground truth | ~95% |
 
-The number that matters is the **incremental** one. Gross recovery overstates the
-agent by Rs 64,381, because a real customer whose payment fails often just tops up
-and retries without anybody doing anything. An agent that takes credit for those
-is measuring the world, not itself.
+A single batch's lift is **one draw, not a result** — across seeds it ranges from
++18.8 to +29.8 pp. Quoting whichever batch ran last invites a reviewer to re-run it
+and get a different number, so the headline is pooled and the spread is stated.
+That spread is ordinary sampling variation, not instability: each batch's own 95%
+interval is about the right width for it.
+
+Reproduce: `uv run razor-pay replicate --runs 12 --cases 400`
+
+The number that matters is the **incremental** one. On a representative batch, gross
+recovery was Rs 167,251 — but Rs 64,381 of that would have arrived anyway, because a
+real customer whose payment fails often just tops up and retries without anybody
+doing anything. An agent that takes credit for those is measuring the world, not
+itself.
 
 Net value subtracts what the actions cost to fire. It is the headline cost metric
 rather than actions-per-recovery, for a reason worth stating: tightening the
@@ -36,7 +43,8 @@ expected-value threshold *improved* actions-per-recovery from 6.60 to 6.31 while
 destroying Rs 2,522 of net value. A ratio improves when you cut its denominator,
 which is not the same as making money. See [`docs/05-worklog.md`](docs/05-worklog.md).
 
-Reproduce: `uv run razor-pay seed --cases 400 --simulated && uv run razor-pay run --simulated`
+Single batch, with real test-mode Orders:
+`uv run razor-pay seed --cases 400 && uv run razor-pay run`
 
 ---
 
@@ -122,8 +130,8 @@ purpose — scoring the diagnoser afterwards. `test_diagnoser_never_reads_inject
 asserts no component under test reads it.
 
 Because the response layer is modelled, the control baseline is an **assumption**,
-so the headline is reported across a sensitivity sweep rather than as a point
-estimate:
+so it is swept rather than fixed. Figures below are from one representative batch
+(the sweep is a within-batch comparison, so pooling would obscure it):
 
 | Baseline scale | Control rate | Treatment rate | Lift |
 |---:|---:|---:|---:|
@@ -219,20 +227,24 @@ cp .env.example .env      # add rzp_test_ credentials; optional ANTHROPIC_API_KE
 uv run razor-pay verify                          # preflight: interlock, API, ledger triggers
 uv run razor-pay seed --cases 400                # creates real test-mode Orders
 uv run razor-pay run                             # runs the loop, writes reports/<batch>.md
+uv run razor-pay replicate --runs 12             # pooled headline across batches
 uv run razor-pay report                          # print the report
 uv run razor-pay audit pf_0000                   # full audit trail for one case
 uv run razor-pay demo-refusals                   # the four refusal scenarios
-uv run pytest                                    # 122 tests
+uv run pytest                                    # 130 tests
 ```
 
 Add `--simulated` to `seed` and `run` to skip Razorpay entirely, and `--no-llm` to
 skip the fallback classifier. Both run fully offline, which is how CI runs.
 
-### Batch size
+### Batch size and replication
 
 Defaults are 400 cases with a 40% control arm. That is a deliberate choice: at 100
 cases with a 30% control the 95% interval spans zero, and an underpowered
 experiment is not evidence. The batch is powered from roughly 200 cases up.
+
+Even so, one powered batch is one draw. `replicate` runs independent batches and
+pools them, which is what the headline above reports.
 
 ---
 
@@ -242,6 +254,8 @@ experiment is not evidence. The batch is powered from roughly 200 cases up.
   response layer is not.
 - The control baseline is an assumption. Mitigated by the sensitivity sweep, not
   eliminated by it.
+- Single-batch lift varies by roughly ±5 pp around the pooled mean. Any one batch
+  report should be read against the replication figure, not on its own.
 - Test mode does not reproduce real issuer downtime distributions, so
   timing-based interventions are argued directionally rather than proven.
 - Action cost is measured and subtracted, but the engine only refuses actions that

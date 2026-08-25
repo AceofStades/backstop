@@ -54,6 +54,8 @@ An agent that reports gross recovery is claiming credit for those. On the curren
 
 | | |
 |---|---:|
+On one representative 400-case batch:
+
 | Gross recovered in treatment | Rs 167,251 |
 | Would have arrived anyway (at control's rate) | Rs 64,381 |
 | **Actually attributable to the agent** | **Rs 102,869** |
@@ -128,14 +130,32 @@ the agent does not get to claim it merely because it also acted.
 ## The headline
 
 ```
-Incremental recovery: +30.4 pp (95% CI +21.7 to +39.1)
-Incremental money:    Rs 102,869
-Net value:            Rs 100,297
+Pooled over 12 independent 400-case batches:
+  Mean incremental lift: +24.7 pp (95% CI of the mean +22.8 to +26.6)
+  Between-batch spread:  sd 3.3 pp, range +18.8 to +29.8
+  Mean net value:        Rs 88,839 per batch (sd Rs 20,951)
 ```
 
-The interval is a normal-approximation two-proportion CI. At n=238 treatment and
-n=162 control that approximation is adequate; below roughly n=100 per arm it would
-not be, which is part of why the defaults are what they are.
+**Why pooled rather than a single batch.** A single batch's lift is one draw. Across
+seeds it ranges +18.8 to +29.8 pp, so quoting whichever batch ran last invites a
+reviewer to re-run it and get a visibly different number.
+
+An earlier version of this document quoted +30.4 pp from one batch. A clean re-run
+produced +17.0 pp. Both were honest draws from a process centred near +25 — and the
+document had, without meaning to, quoted the flattering one. See
+[`05-worklog.md`](05-worklog.md).
+
+The between-batch spread is stated alongside the mean deliberately: anyone running
+a single batch should land inside it and not be surprised.
+
+Each individual batch also reports its own interval — a normal-approximation
+two-proportion CI. At roughly n=240 treatment and n=160 control that approximation
+is adequate; below about n=100 per arm it would not be, which is part of why the
+defaults are what they are.
+
+Worth noting what the per-batch CI does and does not say. It describes uncertainty
+*within* that sample. It says nothing about whether the sample was a flattering one,
+which is exactly the gap replication closes.
 
 **Significance is reported, not assumed.** `lift_significant` is `lo > 0`, and the
 report prints "NOT significant" when the interval spans zero rather than quietly
@@ -150,6 +170,8 @@ the headline ships with a sweep rather than alone.
 
 | Baseline scale | Control rate | Treatment rate | Lift |
 |---:|---:|---:|---:|
+(One representative batch; the sweep is a within-batch comparison.)
+
 | 0.50× | 8.6% | 41.6% | +33.0 pp |
 | 0.75× | 13.6% | 43.3% | +29.7 pp |
 | 1.00× | 17.9% | 48.3% | +30.4 pp |
@@ -168,6 +190,8 @@ without touching Razorpay again. `trace.interventions` exists for exactly this.
 ## The cost side, and a metric that was actively misleading
 
 Recovery numbers without cost numbers are half a story.
+
+One representative batch (mean across 12 replications: Rs 88,839, sd Rs 20,951):
 
 | Metric | Value | Why it is reported |
 |---|---:|---|

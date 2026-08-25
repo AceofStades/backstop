@@ -23,9 +23,11 @@ could plausibly work for that specific reason, refuses to act when not confident
 executes inside limits it cannot talk itself past, writes an append-only record of
 what it did and what it checked first.
 
-**3. The number.** "+30.4 percentage points incremental, Rs 102,869, against a
-162-case held-out control arm." Then immediately: "gross was Rs 167,251, but
-Rs 64,381 of that would have arrived anyway, so I report the incremental figure."
+**3. The number.** "+24.7 percentage points incremental, pooled across 12
+independent batches, each with a held-out control arm — between-batch spread is
+about 3 points either side." Then immediately: "gross recovery would have been
+Rs 167,251 on a typical batch, but Rs 64,381 of that arrives anyway, so I report
+incremental."
 
 **4. One failure, live.** `demo-refusals` — a contact that would fire at 23:00 gets
 deferred to 08:00 with the reason logged, not dropped, not sent.
@@ -59,10 +61,22 @@ makes the same self-recovery draw in either arm. And the control baseline is
 non-zero for every root cause — a control group that recovers 0% by construction
 makes any uplift look spectacular and prove nothing.
 
+### "I re-ran your batch and got a different number."
+
+Expected, and the README says so before you run it. Single-batch lift ranges +18.8
+to +29.8 pp across seeds — ordinary sampling variation at n=400. That is why the
+headline is pooled across 12 batches rather than taken from whichever batch ran
+last, and why the between-batch spread is printed next to the mean.
+
+I got this wrong initially: an earlier README quoted +30.4 pp from one batch, and a
+clean re-run gave +17.0. Both were honest draws. The fix was `razor-pay replicate`,
+not a better single batch.
+
 ### "Your baseline is invented. Why is the lift real?"
 
 It is invented, which is why the headline ships with a sensitivity sweep rather than
-alone. Across 0.5× to 1.5× the assumed baseline, the lift ranges +33.0 to +25.6 pp.
+alone. Across 0.5× to 1.5× the assumed baseline, the lift ranges +33.0 to +25.6 pp on a
+representative batch.
 It survives every baseline tested. That is a weaker claim than a measured baseline
 and a stronger one than a point estimate.
 
@@ -130,8 +144,9 @@ raise. I can demonstrate that in ten seconds.
 
 ### "What is your false positive cost?"
 
-Rs 2,572 of action cost against Rs 102,869 of incremental recovery, so net value is
-Rs 100,297. 101 of the 396 actions were customer contacts.
+On a representative batch, Rs 2,572 of action cost against Rs 102,869 of
+incremental recovery, so net value is Rs 100,297; 101 of the 396 actions were
+customer contacts. Mean net value across 12 replications is Rs 88,839.
 
 There is a better answer buried in that, and I would volunteer it: I originally
 reported actions-per-attributable-recovery, 6.60, and set out to optimise it. A
@@ -221,9 +236,10 @@ Six commands, about four minutes, with a story:
 uv run razor-pay verify           # interlock refuses non-test keys; ledger triggers work
 uv run razor-pay demo-refusals    # four refusals, each with a reason code
 uv run razor-pay seed --cases 400 # real test-mode Orders created
-uv run razor-pay run              # the loop, then the headline
+uv run razor-pay run              # the loop, then this batch's numbers
+uv run razor-pay replicate --runs 12   # the pooled headline
 uv run razor-pay audit pf_0000    # the full trail for one case
-uv run pytest -q                  # 122 tests
+uv run pytest -q                  # 130 tests
 ```
 
 Have `reports/<batch>.md` open in a second pane. The sensitivity table is the slide
