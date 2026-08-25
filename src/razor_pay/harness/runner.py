@@ -255,7 +255,12 @@ class BatchRunner:
             spent = self.ledger.spent_in_window(
                 case.merchant_id, clock, self.mandate.velocity_window_hours
             )
-            gate = mandate_mod.check(self.mandate, case, decision, clock, spent)
+            contacts = self.ledger.customer_contacts_in_window(
+                case.customer_ref, clock, self.mandate.contact_budget_window_hours
+            )
+            gate = mandate_mod.check(
+                self.mandate, case, decision, clock, spent, contacts
+            )
             self.ledger.record_gate(clock, case, decision, gate, self.mandate.mandate_id)
 
             if gate.allowed or gate.refusal_code is not RefusalCode.OUTSIDE_CONTACT_WINDOW:

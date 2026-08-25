@@ -57,6 +57,11 @@ class Mandate(BaseModel):
     velocity_cap_paise: int = Field(gt=0)
     velocity_window_hours: int = 24
     max_attempts_per_case: int = 3
+    # Contacts are capped per CUSTOMER, not only per case. A customer with three
+    # failed payments at one merchant would otherwise receive three independent
+    # contact sequences, each individually compliant and collectively harassment.
+    max_contacts_per_customer: int = 4
+    contact_budget_window_hours: int = 168  # 7 days
     allowed_channels: set[Channel] = Field(
         default_factory=lambda: {Channel.NONE, Channel.WHATSAPP, Channel.SMS}
     )
@@ -97,6 +102,7 @@ def check(
     decision: Decision,
     now: datetime,
     spent_in_window_paise: int = 0,
+    customer_contacts_in_window: int = 0,
 ) -> GateResult:
     """Authorise or refuse a single proposed action.
 
@@ -176,6 +182,16 @@ def check(
                 RefusalCode.CHANNEL_NOT_CONSENTED,
                 "TRAI TCCCPR requires a DLT-registered template id for A2P "
                 "messaging; none was supplied.",
+            )
+
+        checks.append("customer_contact_budget")
+        if customer_contacts_in_window >= mandate.max_contacts_per_customer:
+            return refuse(
+                RefusalCode.CUSTOMER_CONTACT_BUDGET_EXHAUSTED,
+                f"Customer {case.customer_ref} has received "
+                f"{customer_contacts_in_window} contact(s) in the last "
+                f"{mandate.contact_budget_window_hours}h, at the cap of "
+                f"{mandate.max_contacts_per_customer}. Refusing across cases.",
             )
 
         checks.append("rbi_contact_window")

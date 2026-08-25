@@ -81,6 +81,23 @@ def sample_detected_at(rng: random.Random, now: datetime) -> datetime:
     return now - timedelta(minutes=rng.randint(0, 72 * 60))
 
 
+# Real merchants have repeat customers, and a customer whose payment failed once
+# is disproportionately likely to fail again -- same thin balance, same dead
+# instrument, same flaky issuer. Drawing customer refs uniformly from a wide pool
+# would make repeats vanish and would quietly hide the per-customer contact
+# budget, which only bites when one person owns several failing cases.
+CUSTOMER_POOL_SIZE = 120
+REPEAT_CUSTOMER_SHARE = 0.35
+
+
+def sample_customer_ref(rng: random.Random) -> str:
+    """Draw a customer, with a heavy-tailed share of repeat offenders."""
+    if rng.random() < REPEAT_CUSTOMER_SHARE:
+        # The troubled tail: a small group generating a large share of failures.
+        return f"cust_{rng.randint(1, CUSTOMER_POOL_SIZE // 6):04d}"
+    return f"cust_{rng.randint(1, CUSTOMER_POOL_SIZE):04d}"
+
+
 def weighted_choice(rng: random.Random, weights: dict[str, float]) -> str:
     keys = list(weights)
     return rng.choices(keys, weights=[weights[k] for k in keys], k=1)[0]

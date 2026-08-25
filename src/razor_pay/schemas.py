@@ -68,6 +68,7 @@ class RefusalCode(StrEnum):
     VELOCITY_CAP_EXCEEDED = "velocity_cap_exceeded"
     ATTEMPT_CAP_REACHED = "attempt_cap_reached"
     CHANNEL_NOT_CONSENTED = "channel_not_consented"
+    CUSTOMER_CONTACT_BUDGET_EXHAUSTED = "customer_contact_budget_exhausted"
     OUTSIDE_CONTACT_WINDOW = "outside_contact_window"
     CASE_PERMANENTLY_STOPPED = "case_permanently_stopped"
 

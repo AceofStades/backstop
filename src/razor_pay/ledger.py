@@ -115,6 +115,25 @@ class Ledger:
         )
         return int(cur.fetchone()["total"])
 
+    def customer_contacts_in_window(
+        self, customer_ref: str, now: datetime, window_hours: int
+    ) -> int:
+        """Executed customer-contacting actions for one customer, across all cases.
+
+        Counted from the ledger rather than an in-memory tally, so the budget
+        survives a restart and spans every case belonging to that customer.
+        """
+        since = (now - timedelta(hours=window_hours)).isoformat()
+        cur = self.store.conn.execute(
+            "SELECT COUNT(*) AS n FROM ledger l "
+            "JOIN cases c ON c.case_id = l.case_id "
+            "WHERE l.batch_id = ? AND l.stage = ? AND l.ts >= ? "
+            "AND l.channel IS NOT NULL AND l.channel != 'none' "
+            "AND json_extract(c.case_json, '$.customer_ref') = ?",
+            (self.batch_id, Stage.EXECUTE.value, since, customer_ref),
+        )
+        return int(cur.fetchone()["n"])
+
     def has_fired(self, idempotency_key: str) -> bool:
         cur = self.store.conn.execute(
             "SELECT 1 FROM ledger WHERE idempotency_key = ? LIMIT 1",

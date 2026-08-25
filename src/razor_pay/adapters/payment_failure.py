@@ -16,6 +16,7 @@ from razor_pay.adapters.base import (
     SeedClient,
     register,
     sample_amount_paise,
+    sample_customer_ref,
     sample_detected_at,
     weighted_choice,
 )
@@ -96,7 +97,7 @@ class PaymentFailureAdapter:
                     case_id=case_id,
                     leak_type=self.leak_type,
                     merchant_id=merchant_id,
-                    customer_ref=f"cust_{rng.randint(1000, 9999)}",
+                    customer_ref=sample_customer_ref(rng),
                     amount_at_risk_paise=amount,
                     entity_refs={"order_id": str(order.get("id", ""))},
                     failure_evidence=evidence,

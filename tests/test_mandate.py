@@ -190,3 +190,42 @@ def test_gate_never_raises_on_any_intervention_type():
         for channel in Channel:
             result = check(make_mandate(), case, make_decision(case, itype, channel), NOW)
             assert isinstance(result.allowed, bool)
+
+
+def test_refuses_when_customer_contact_budget_is_exhausted():
+    """Caps contacts per CUSTOMER, not only per case.
+
+    A customer with several failed payments at one merchant would otherwise
+    receive several independent contact sequences, each individually compliant
+    and collectively harassment.
+    """
+    case = make_case()
+    decision = make_decision(
+        case,
+        InterventionType.SEND_PAYMENT_LINK,
+        Channel.WHATSAPP,
+        template=policy.TEMPLATE_PAYMENT_LINK,
+    )
+    result = check(
+        make_mandate(max_contacts_per_customer=4),
+        case,
+        decision,
+        NOW,
+        customer_contacts_in_window=4,
+    )
+    assert not result.allowed
+    assert result.refusal_code is RefusalCode.CUSTOMER_CONTACT_BUDGET_EXHAUSTED
+
+
+def test_contact_budget_does_not_block_silent_rail_actions():
+    """A retry touches no customer, so it must not consume the contact budget."""
+    case = make_case()
+    decision = make_decision(case, InterventionType.RETRY_BACKOFF, Channel.NONE)
+    result = check(
+        make_mandate(max_contacts_per_customer=4),
+        case,
+        decision,
+        NOW,
+        customer_contacts_in_window=99,
+    )
+    assert result.allowed

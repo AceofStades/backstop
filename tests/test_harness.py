@@ -138,3 +138,54 @@ def test_sensitivity_sweep_moves_the_lift(tmp_path):
     # A higher assumed baseline must not leave the reported lift unchanged.
     assert rows[0]["control_rate"] < rows[-1]["control_rate"]
     store.close()
+
+
+def test_contact_budget_is_counted_across_cases_for_one_customer(tmp_path):
+    """The budget must span cases, which is the whole point of it."""
+    from datetime import timedelta
+
+    from razor_pay.schemas import FailureEvidence, LeakType, RecoveryCase
+
+    store = Store(tmp_path / "budget.db")
+    mandate = Mandate(
+        mandate_id="m",
+        merchant_id="merch_demo_001",
+        issued_at=NOW,
+        expires_at=NOW.replace(year=2027),
+        per_action_cap_paise=2_500_000,
+        velocity_cap_paise=500_000_000,
+    )
+    store.create_batch("b1", NOW, mandate, {})
+
+    # Two separate cases, same customer.
+    for i in range(2):
+        store.insert_case(
+            "b1",
+            RecoveryCase(
+                case_id=f"shared_{i}",
+                leak_type=LeakType.PAYMENT_FAILURE,
+                merchant_id="merch_demo_001",
+                customer_ref="cust_shared",
+                amount_at_risk_paise=100_000,
+                failure_evidence=FailureEvidence(error_code="insufficient_funds"),
+                detected_at=NOW,
+            ),
+        )
+    store.commit()
+
+    ledger = Ledger(store, "b1")
+    ledger.record(
+        ts=NOW,
+        case_id="shared_0",
+        stage=Stage.EXECUTE,
+        reason="contacted",
+        channel="whatsapp",
+        idempotency_key="shared_0:1",
+    )
+    store.commit()
+
+    # The contact on case 0 must be visible when gating case 1.
+    later = NOW + timedelta(hours=1)
+    assert ledger.customer_contacts_in_window("cust_shared", later, 168) == 1
+    assert ledger.customer_contacts_in_window("cust_other", later, 168) == 0
+    store.close()
