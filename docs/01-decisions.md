@@ -164,7 +164,7 @@ dead instrument?" has no good answer if the model is choosing.
 
 **Reasoning.** Real customers self-recover. They top up and retry, or the issuer
 recovers on its own. An agent that reports gross recovery is claiming credit for
-those. On the current 400-case batch, Rs 53,630 of Rs 138,951 gross would have
+those. On the current 400-case batch, Rs 64,381 of Rs 167,251 gross would have
 arrived anyway — 39% of the headline number is not the agent's work.
 
 This is the single most likely thing to separate the project in an architecture

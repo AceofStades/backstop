@@ -265,7 +265,7 @@ for. Defaults are now 400 at 40%.
 
 ## What the tests actually guard
 
-115 tests, but a handful carry most of the weight:
+122 tests, but a handful carry most of the weight:
 
 | Test | Invariant |
 |---|---|

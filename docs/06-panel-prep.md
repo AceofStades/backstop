@@ -194,7 +194,7 @@ model so it can be argued with rather than buried.
 
 ## Traps
 
-**Do not say "recovered Rs 138,951."** Say incremental, every time. The gross figure
+**Do not say "recovered Rs 167,251."** Say incremental, every time. The gross figure
 is in the report, labelled as overstating the agent.
 
 **Do not imply the customer response is real.** The phrase is "the action layer is

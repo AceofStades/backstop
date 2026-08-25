@@ -41,7 +41,7 @@ overwrite a good report with an empty one). Seed a fresh batch, or pass `--force
 ```
 Detector (leak adapter)  ->  RecoveryCase
   -> Diagnoser     -> RootCause + confidence   diagnose.py
-  -> Policy engine -> Intervention | STOP      policy.py
+  -> Policy engine -> Intervention | STOP      policy.py + economics.py
   -> Mandate gate  -> ALLOW | REFUSE(code)     mandate.py
   -> Executor      -> Razorpay test-mode call  execute.py
   -> Ledger        -> append-only entry        ledger.py / store.py
@@ -83,6 +83,18 @@ indexed by attempts made. A cause absent from the playbook stops — deliberatel
 `taxonomy.profile_for(cause).retryable_same_instrument` is true;
 `test_never_retries_an_instrument_that_cannot_work` asserts this across every cause.
 
+**Net value, not the efficiency ratio.** Actions-per-recovery is reported but is NOT
+an optimisation target. Tightening `economics.MIN_EXPECTED_VALUE_RATIO` above
+break-even improves that ratio and destroys net value — measured, −Rs 2,522. A ratio
+improves when you cut its denominator. The threshold stays at 1.0, where it encodes
+a principle rather than a tuning knob, and
+`test_break_even_threshold_is_a_principle_not_a_tuning_knob` guards it.
+
+**The engine's beliefs are not the harness's truth.** `economics.BELIEVED_UPLIFT` is a
+separate object from `harness/response_model.py`'s `UPLIFT`. Never import one into the
+other: the engine would gain perfect knowledge of the simulated customer, and any
+expected-value rule would then be measuring the simulation rather than the policy.
+
 **The gate is the only path to money.** Nothing may call Razorpay without passing
 `mandate.check()` first. Refusals are structured `GateResult` values carrying a
 `RefusalCode`, never exceptions — `test_gate_never_raises_on_any_intervention_type`
@@ -95,6 +107,11 @@ Assigning later would let the engine's behaviour decide who lands in which arm. 
 response model uses common random numbers keyed on `case_id`, so the same case makes
 the same self-recovery draw in either arm.
 
+**Contacts are capped per customer as well as per case.** `max_contacts_per_customer`
+is counted from the ledger across every case with that `customer_ref`. Seeding draws
+from a deliberately small customer pool with a heavy tail — a wide uniform pool makes
+repeat customers vanish and silently disables this check.
+
 **Report incremental, never gross.** Gross recovery counts cases that would have
 recovered anyway. The control baseline is an assumption, so the headline always ships
 with the sensitivity sweep alongside it.
@@ -106,6 +123,14 @@ index, so a re-run cannot double-charge or double-contact.
 **Test-mode interlock.** `config.assert_test_mode()` refuses any key not prefixed
 `rzp_test_` before a client is constructed. Never weaken this to accommodate a test —
 use `--simulated` instead.
+
+## Docs
+
+`docs/` carries the reasoning, not just the API surface. Before changing measurement
+or compliance code, read `docs/03-measurement.md` and `docs/04-compliance.md`;
+`docs/05-worklog.md` records seven bugs and why each was subtle. Keep reported
+numbers in README and docs in sync with the latest batch — stale figures in a doc
+that claims measurement rigour are worse than no doc.
 
 ## Current state
 

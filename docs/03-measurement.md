@@ -58,7 +58,7 @@ An agent that reports gross recovery is claiming credit for those. On the curren
 | Would have arrived anyway (at control's rate) | Rs 64,381 |
 | **Actually attributable to the agent** | **Rs 102,869** |
 
-38% of the headline number is not the agent's work. Reporting the Rs 138,951 would
+38% of the headline number is not the agent's work. Reporting the Rs 167,251 would
 not be a rounding error; it would be a 63% overstatement of the thing being sold.
 
 ---
