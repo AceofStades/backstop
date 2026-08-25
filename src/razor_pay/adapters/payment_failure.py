@@ -14,6 +14,7 @@ from datetime import datetime
 from razor_pay import taxonomy
 from razor_pay.adapters.base import (
     SeedClient,
+    case_id as make_case_id,
     register,
     sample_amount_paise,
     sample_customer_ref,
@@ -61,10 +62,11 @@ class PaymentFailureAdapter:
         now: datetime,
         merchant_id: str,
         client: SeedClient,
+        token: str = "",
     ) -> list[RecoveryCase]:
         cases: list[RecoveryCase] = []
         for i in range(n):
-            case_id = f"pf_{i:04d}"
+            case_id = make_case_id("pf", token, i)
             amount = sample_amount_paise(rng)
             order = client.create_order(
                 amount, f"seed_{case_id}", {"case_id": case_id, "leak": self.leak_type.value}

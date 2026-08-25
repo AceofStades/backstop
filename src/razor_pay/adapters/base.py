@@ -33,7 +33,20 @@ class Adapter(Protocol):
         now: datetime,
         merchant_id: str,
         client: "SeedClient",
+        token: str = "",
     ) -> list[RecoveryCase]: ...
+
+
+def case_id(prefix: str, token: str, index: int) -> str:
+    """Build a globally unique case id.
+
+    Case ids must be unique across batches, not merely within one: the ledger
+    joins on `case_id` alone, so a repeated id would make one batch's contacts
+    count against another's customer budget. Without the token, a second
+    `seed` collides on the primary key -- which is exactly what `run` tells you
+    to do when it refuses to re-run a batch.
+    """
+    return f"{prefix}_{token}_{index:04d}" if token else f"{prefix}_{index:04d}"
 
 
 class SeedClient:

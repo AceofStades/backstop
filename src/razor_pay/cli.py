@@ -140,11 +140,13 @@ def seed(cases, leaks, control_fraction, seed, db, simulated) -> None:
     per_leak = cases // len(leak_types)
     remainder = cases - per_leak * len(leak_types)
 
+    # Case ids carry the batch's time token so they stay unique across batches.
+    token = batch_id.rsplit("_", 1)[-1]
     all_cases = []
     for i, leak in enumerate(leak_types):
         n = per_leak + (remainder if i == 0 else 0)
         all_cases.extend(
-            get_adapter(leak).seed(n, rng, now, "merch_demo_001", client)
+            get_adapter(leak).seed(n, rng, now, "merch_demo_001", client, token)
         )
 
     # Assignment happens here, at intake, before anything has looked at a case.
@@ -271,9 +273,23 @@ def audit(case_id: str, db: str) -> None:
     """Print the full append-only audit trail for one case."""
     store = _store(db)
     batch_id = store.latest_batch_id()
-    entries = Ledger(store, batch_id or "").entries_for_case(case_id)
+    ledger = Ledger(store, batch_id or "")
+
+    entries = ledger.entries_for_case(case_id)
     if not entries:
-        raise click.ClickException(f"No ledger entries for case {case_id}.")
+        # Case ids carry a batch token, so allow a unique partial match:
+        # `audit pf_0000` still works when the full id is pf_134512_0000.
+        matches = ledger.resolve_case_ids(case_id)
+        if len(matches) == 1:
+            case_id = matches[0]
+            entries = ledger.entries_for_case(case_id)
+        elif len(matches) > 1:
+            raise click.ClickException(
+                f"'{case_id}' matches {len(matches)} cases: "
+                f"{', '.join(matches[:5])}{' ...' if len(matches) > 5 else ''}"
+            )
+        else:
+            raise click.ClickException(f"No ledger entries for case {case_id}.")
 
     click.secho(f"Audit trail for {case_id} ({len(entries)} entries)", bold=True)
     for e in entries:

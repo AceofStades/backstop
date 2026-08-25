@@ -122,15 +122,20 @@ class Ledger:
 
         Counted from the ledger rather than an in-memory tally, so the budget
         survives a restart and spans every case belonging to that customer.
+
+        Deliberately NOT scoped to this batch. A customer does not experience
+        batch boundaries -- being contacted four times yesterday and four times
+        today is eight contacts to them, however the runs were organised. The
+        window is wall-clock, which is what the regulator's view is too.
         """
         since = (now - timedelta(hours=window_hours)).isoformat()
         cur = self.store.conn.execute(
             "SELECT COUNT(*) AS n FROM ledger l "
             "JOIN cases c ON c.case_id = l.case_id "
-            "WHERE l.batch_id = ? AND l.stage = ? AND l.ts >= ? "
+            "WHERE l.stage = ? AND l.ts >= ? "
             "AND l.channel IS NOT NULL AND l.channel != 'none' "
             "AND json_extract(c.case_json, '$.customer_ref') = ?",
-            (self.batch_id, Stage.EXECUTE.value, since, customer_ref),
+            (Stage.EXECUTE.value, since, customer_ref),
         )
         return int(cur.fetchone()["n"])
 
@@ -155,6 +160,45 @@ class Ledger:
             "SELECT * FROM ledger WHERE case_id = ? ORDER BY seq", (case_id,)
         )
         return [dict(r) for r in cur.fetchall()]
+
+    def resolve_case_ids(self, fragment: str) -> list[str]:
+        """Case ids matching `fragment`, newest batch first.
+
+        Case ids carry a batch token, so `pf_0000` should still find
+        `pf_134512_0000` when it is unambiguous.
+
+        Note `_` is a single-character wildcard in SQL LIKE, so a fragment like
+        `pf_0000` must be escaped before it is used as a literal -- otherwise it
+        silently matches nothing.
+        """
+
+        def escape(text: str) -> str:
+            return text.replace("\\", "\\\\").replace("_", "\\_").replace("%", "\\%")
+
+        patterns = [f"%{escape(fragment)}%"]
+        # `prefix_NNNN` should also find `prefix_<token>_NNNN`.
+        head, sep, tail = fragment.rpartition("_")
+        if sep and head and tail:
+            patterns.append(f"{escape(head)}\\_%\\_{escape(tail)}")
+
+        # Prefer this ledger's own batch, so `audit pf_0000` resolves to the
+        # batch under examination rather than reporting ambiguity across every
+        # batch that ever ran.
+        for scope_to_batch in (True, False):
+            for pattern in patterns:
+                sql = (
+                    "SELECT DISTINCT case_id FROM ledger WHERE case_id LIKE ? "
+                    "ESCAPE '\\'"
+                )
+                args: list[str] = [pattern]
+                if scope_to_batch:
+                    sql += " AND batch_id = ?"
+                    args.append(self.batch_id)
+                cur = self.store.conn.execute(sql + " ORDER BY case_id DESC", args)
+                found = [r["case_id"] for r in cur.fetchall()]
+                if found:
+                    return found
+        return []
 
     def count(self) -> int:
         cur = self.store.conn.execute(

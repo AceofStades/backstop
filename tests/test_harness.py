@@ -189,3 +189,118 @@ def test_contact_budget_is_counted_across_cases_for_one_customer(tmp_path):
     assert ledger.customer_contacts_in_window("cust_shared", later, 168) == 1
     assert ledger.customer_contacts_in_window("cust_other", later, 168) == 0
     store.close()
+
+
+def test_contact_budget_spans_batches(tmp_path):
+    """A customer does not experience batch boundaries.
+
+    Being contacted four times yesterday and four times today is eight contacts
+    to them, however the runs were organised. The budget window is wall-clock.
+    """
+    from datetime import timedelta
+
+    from razor_pay.schemas import FailureEvidence, LeakType, RecoveryCase
+
+    store = Store(tmp_path / "batches.db")
+    mandate = Mandate(
+        mandate_id="m",
+        merchant_id="merch_demo_001",
+        issued_at=NOW,
+        expires_at=NOW.replace(year=2027),
+        per_action_cap_paise=2_500_000,
+        velocity_cap_paise=500_000_000,
+    )
+
+    for batch in ("b1", "b2"):
+        store.create_batch(batch, NOW, mandate, {})
+        store.insert_case(
+            batch,
+            RecoveryCase(
+                case_id=f"{batch}_case",
+                leak_type=LeakType.PAYMENT_FAILURE,
+                merchant_id="merch_demo_001",
+                customer_ref="cust_repeat",
+                amount_at_risk_paise=100_000,
+                failure_evidence=FailureEvidence(error_code="insufficient_funds"),
+                detected_at=NOW,
+            ),
+        )
+        Ledger(store, batch).record(
+            ts=NOW,
+            case_id=f"{batch}_case",
+            stage=Stage.EXECUTE,
+            reason="contacted",
+            channel="whatsapp",
+            idempotency_key=f"{batch}_case:1",
+        )
+    store.commit()
+
+    later = NOW + timedelta(hours=1)
+    # Querying from either batch's ledger must see both contacts.
+    assert Ledger(store, "b1").customer_contacts_in_window("cust_repeat", later, 168) == 2
+    assert Ledger(store, "b2").customer_contacts_in_window("cust_repeat", later, 168) == 2
+    store.close()
+
+
+def test_contact_budget_respects_the_time_window(tmp_path):
+    """Contacts older than the window must not count against the budget."""
+    from datetime import timedelta
+
+    from razor_pay.schemas import FailureEvidence, LeakType, RecoveryCase
+
+    store = Store(tmp_path / "window.db")
+    mandate = Mandate(
+        mandate_id="m",
+        merchant_id="merch_demo_001",
+        issued_at=NOW,
+        expires_at=NOW.replace(year=2027),
+        per_action_cap_paise=2_500_000,
+        velocity_cap_paise=500_000_000,
+    )
+    store.create_batch("b1", NOW, mandate, {})
+    store.insert_case(
+        "b1",
+        RecoveryCase(
+            case_id="old_case",
+            leak_type=LeakType.PAYMENT_FAILURE,
+            merchant_id="merch_demo_001",
+            customer_ref="cust_old",
+            amount_at_risk_paise=100_000,
+            failure_evidence=FailureEvidence(error_code="insufficient_funds"),
+            detected_at=NOW,
+        ),
+    )
+    Ledger(store, "b1").record(
+        ts=NOW,
+        case_id="old_case",
+        stage=Stage.EXECUTE,
+        reason="contacted long ago",
+        channel="whatsapp",
+        idempotency_key="old_case:1",
+    )
+    store.commit()
+
+    ledger = Ledger(store, "b1")
+    assert ledger.customer_contacts_in_window("cust_old", NOW + timedelta(hours=1), 168) == 1
+    # Same contact, queried from far enough in the future to fall out of window.
+    assert ledger.customer_contacts_in_window("cust_old", NOW + timedelta(days=30), 168) == 0
+    store.close()
+
+
+def test_case_ids_are_unique_across_batches():
+    """Two seeds must not collide on the primary key.
+
+    `run` tells the user to seed a fresh batch when it refuses to re-run one,
+    so a collision here breaks the exact flow the error message recommends.
+    """
+    from razor_pay.adapters.payment_failure import PaymentFailureAdapter
+
+    first = PaymentFailureAdapter().seed(
+        10, random.Random(1), NOW, "m1", SeedClient(), token="134500"
+    )
+    second = PaymentFailureAdapter().seed(
+        10, random.Random(1), NOW, "m1", SeedClient(), token="134600"
+    )
+    ids_a = {c.case_id for c in first}
+    ids_b = {c.case_id for c in second}
+    assert not (ids_a & ids_b), "case ids collide across batches"

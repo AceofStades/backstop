@@ -16,6 +16,7 @@ from datetime import datetime
 from razor_pay import taxonomy
 from razor_pay.adapters.base import (
     SeedClient,
+    case_id as make_case_id,
     register,
     sample_amount_paise,
     sample_customer_ref,
@@ -54,10 +55,11 @@ class SubscriptionDunningAdapter:
         now: datetime,
         merchant_id: str,
         client: SeedClient,
+        token: str = "",
     ) -> list[RecoveryCase]:
         cases: list[RecoveryCase] = []
         for i in range(n):
-            case_id = f"sd_{i:04d}"
+            case_id = make_case_id("sd", token, i)
             # Subscription tickets cluster tighter than one-off carts.
             amount = max(9900, min(sample_amount_paise(rng), 500000))
             order = client.create_order(

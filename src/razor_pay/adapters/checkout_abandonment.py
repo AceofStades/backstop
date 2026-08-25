@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 
 from razor_pay.adapters.base import (
     SeedClient,
+    case_id as make_case_id,
     register,
     sample_amount_paise,
     sample_customer_ref,
@@ -34,10 +35,11 @@ class CheckoutAbandonmentAdapter:
         now: datetime,
         merchant_id: str,
         client: SeedClient,
+        token: str = "",
     ) -> list[RecoveryCase]:
         cases: list[RecoveryCase] = []
         for i in range(n):
-            case_id = f"ca_{i:04d}"
+            case_id = make_case_id("ca", token, i)
             amount = sample_amount_paise(rng)
             order = client.create_order(
                 amount, f"seed_{case_id}", {"case_id": case_id, "leak": self.leak_type.value}
