@@ -146,11 +146,22 @@ RootCause.INSUFFICIENT_FUNDS: [
 - diagnosis confidence is below threshold
 - the cause has no ladder
 - the ladder is exhausted
+- the selected action cannot cover its own cost (`economics.is_worth_firing`)
 - **the selected step is a retry the taxonomy says cannot succeed**
 
 That last one is a guard against the table contradicting itself. If a future edit
 adds a retry to the `INSTRUMENT_INVALID` ladder, `decide()` refuses it at runtime
 *and* the test suite fails.
+
+### Economics as a stopping rule
+
+`economics.py` holds action costs per channel and the engine's *own* estimate of
+per-intervention uplift — deliberately a different object from the harness's truth
+table, so the policy is not built on perfect knowledge of the simulated customer.
+
+The threshold is break-even: never fire an action whose expected gain is below its
+own cost. It was briefly set higher, which improved the efficiency ratio and
+destroyed net value; see [`05-worklog.md`](05-worklog.md) for the sweep.
 
 ### Payday timing
 
@@ -178,9 +189,10 @@ The gate runs checks in severity order and returns on the first failure:
 | 6 | velocity window not breached | `VELOCITY_CAP_EXCEEDED` |
 | 7 | channel consented | `CHANNEL_NOT_CONSENTED` |
 | 8 | DLT template present | `CHANNEL_NOT_CONSENTED` |
-| 9 | inside RBI contact window | `OUTSIDE_CONTACT_WINDOW` |
+| 9 | customer contact budget | `CUSTOMER_CONTACT_BUDGET_EXHAUSTED` |
+| 10 | inside RBI contact window | `OUTSIDE_CONTACT_WINDOW` |
 
-Checks 5–6 apply only to money-moving interventions; 7–9 only to
+Checks 5–6 apply only to money-moving interventions; 7–10 only to
 customer-contacting ones. Every `GateResult` carries `checks_performed`, so the
 ledger records what was verified and not merely the verdict.
 
@@ -251,6 +263,7 @@ messaged.
 |---|---:|---|
 | `schemas.py` | 143 | Every type crossing a stage boundary |
 | `taxonomy.py` | 145 | Razorpay error codes → causes, with retryability |
+| `economics.py` | 118 | Action costs, the engine's believed uplift, break-even stopping |
 | `diagnose.py` | 179 | Three-tier classification |
 | `policy.py` | 245 | Escalation ladders and stopping rules |
 | `mandate.py` | 191 | The gate |
@@ -261,4 +274,4 @@ messaged.
 | `cli.py` | 304 | Six commands |
 | `adapters/` | 391 | Three leaks + registration plumbing |
 | `harness/` | 887 | Assignment, response model, runner, metrics, scenarios |
-| `tests/` | 456 | 115 tests |
+| `tests/` | 570 | 122 tests |

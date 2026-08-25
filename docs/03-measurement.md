@@ -54,11 +54,11 @@ An agent that reports gross recovery is claiming credit for those. On the curren
 
 | | |
 |---|---:|
-| Gross recovered in treatment | Rs 138,951 |
-| Would have arrived anyway (at control's rate) | Rs 53,630 |
-| **Actually attributable to the agent** | **Rs 85,321** |
+| Gross recovered in treatment | Rs 167,251 |
+| Would have arrived anyway (at control's rate) | Rs 64,381 |
+| **Actually attributable to the agent** | **Rs 102,869** |
 
-39% of the headline number is not the agent's work. Reporting the Rs 138,951 would
+38% of the headline number is not the agent's work. Reporting the Rs 138,951 would
 not be a rounding error; it would be a 63% overstatement of the thing being sold.
 
 ---
@@ -128,8 +128,9 @@ the agent does not get to claim it merely because it also acted.
 ## The headline
 
 ```
-Incremental recovery: +29.6 pp (95% CI +20.9 to +38.2)
-Incremental money:    Rs 85,321
+Incremental recovery: +30.4 pp (95% CI +21.7 to +39.1)
+Incremental money:    Rs 102,869
+Net value:            Rs 100,297
 ```
 
 The interval is a normal-approximation two-proportion CI. At n=238 treatment and
@@ -149,11 +150,11 @@ the headline ships with a sweep rather than alone.
 
 | Baseline scale | Control rate | Treatment rate | Lift |
 |---:|---:|---:|---:|
-| 0.50× | 7.4% | 42.0% | +34.6 pp |
-| 0.75× | 11.1% | 45.4% | +34.3 pp |
-| 1.00× | 17.9% | 47.5% | +29.6 pp |
-| 1.25× | 23.5% | 50.0% | +26.5 pp |
-| 1.50× | 28.4% | 53.4% | +25.0 pp |
+| 0.50× | 8.6% | 41.6% | +33.0 pp |
+| 0.75× | 13.6% | 43.3% | +29.7 pp |
+| 1.00× | 17.9% | 48.3% | +30.4 pp |
+| 1.25× | 23.5% | 52.9% | +29.5 pp |
+| 1.50× | 29.0% | 54.6% | +25.6 pp |
 
 **The lift survives every baseline tested.** That is a stronger claim than any single
 number, and it is the honest way to present a result that rests on an assumption.
@@ -164,21 +165,41 @@ without touching Razorpay again. `trace.interventions` exists for exactly this.
 
 ---
 
-## The cost side
+## The cost side, and a metric that was actively misleading
 
 Recovery numbers without cost numbers are half a story.
 
 | Metric | Value | Why it is reported |
 |---|---:|---|
-| Actions fired | 429 | Total interventions across the batch |
-| Attributable recoveries | 65 | Recoveries the agent actually caused |
-| **Actions per attributable recovery** | **6.60** | The efficiency ratio |
-| Contacts deferred for RBI window | 40 | Compliance load |
+| **Net value** | **Rs 100,297** | Incremental recovery minus what the actions cost |
+| Action cost | Rs 2,572 | 396 actions, 101 of them customer contacts |
+| Attributable recoveries | 68 | Recoveries the agent actually caused |
+| Actions per attributable recovery | 5.82 | Reported, *not* optimised against |
+| Contacts deferred for RBI window | 34 | Compliance load |
 
-**6.60 is not a good number, and the README says so.** Each action carries cost —
-API calls, and for contacting channels, customer patience. A production version
-would optimise against this; the current engine measures it and does not yet act on
-it. Reporting it anyway is the point.
+**Net value is the headline, and actions-per-recovery is deliberately demoted.**
+
+The original design had it the other way around, and that was a real mistake worth
+recording. Tightening the expected-value threshold to make actions-per-recovery
+look better did exactly that — 6.60 → 6.31 — while destroying Rs 2,522 of net
+value, because the forgone recoveries were worth far more than the actions saved.
+
+A ratio improves when you cut its denominator. That is not the same as making
+money. The threshold now sits at break-even, where it encodes a principle rather
+than a tuning knob, and the report leads with the absolute number.
+
+Full sweep in [`05-worklog.md`](05-worklog.md).
+
+### Why the engine's uplift beliefs are a separate table
+
+`economics.BELIEVED_UPLIFT` is not `response_model.UPLIFT`, and
+`test_engine_belief_is_not_harness_truth` keeps them apart.
+
+If the policy engine read the harness's table it would have perfect knowledge of
+customer behaviour, and any expected-value rule built on it would be measuring the
+simulation rather than the policy. A real engine only ever has a prior, estimated
+from history and wrong at the edges. Two tables that are allowed to disagree model
+that honestly.
 
 ---
 

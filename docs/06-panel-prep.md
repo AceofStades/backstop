@@ -23,9 +23,9 @@ could plausibly work for that specific reason, refuses to act when not confident
 executes inside limits it cannot talk itself past, writes an append-only record of
 what it did and what it checked first.
 
-**3. The number.** "+29.6 percentage points incremental, Rs 85,321, against a
-162-case held-out control arm." Then immediately: "gross was Rs 138,951, but
-Rs 53,630 of that would have arrived anyway, so I report the incremental figure."
+**3. The number.** "+30.4 percentage points incremental, Rs 102,869, against a
+162-case held-out control arm." Then immediately: "gross was Rs 167,251, but
+Rs 64,381 of that would have arrived anyway, so I report the incremental figure."
 
 **4. One failure, live.** `demo-refusals` — a contact that would fire at 23:00 gets
 deferred to 08:00 with the reason logged, not dropped, not sent.
@@ -62,7 +62,7 @@ makes any uplift look spectacular and prove nothing.
 ### "Your baseline is invented. Why is the lift real?"
 
 It is invented, which is why the headline ships with a sensitivity sweep rather than
-alone. Across 0.5× to 1.5× the assumed baseline, the lift ranges +34.6 to +25.0 pp.
+alone. Across 0.5× to 1.5× the assumed baseline, the lift ranges +33.0 to +25.6 pp.
 It survives every baseline tested. That is a weaker claim than a measured baseline
 and a stronger one than a point estimate.
 
@@ -130,14 +130,34 @@ raise. I can demonstrate that in ten seconds.
 
 ### "What is your false positive cost?"
 
-6.60 actions per attributable recovery. That is not a good number and I have not
-optimised against it. Each action costs an API call and, for contacting channels,
-customer patience. A production version would weigh expected recovery against
-contact cost per step; this one measures the ratio and reports it.
+Rs 2,572 of action cost against Rs 102,869 of incremental recovery, so net value is
+Rs 100,297. 101 of the 396 actions were customer contacts.
+
+There is a better answer buried in that, and I would volunteer it: I originally
+reported actions-per-attributable-recovery, 6.60, and set out to optimise it. A
+stricter expected-value threshold improved it to 6.31 — and destroyed Rs 2,522 of
+net value, because the recoveries I gave up were worth far more than the actions I
+saved. A ratio improves when you cut its denominator; that is not the same as
+making money.
+
+So the threshold now sits at break-even, where it encodes a principle rather than a
+tuning parameter, and the report leads with net value. The ratio is still printed,
+labelled as reported rather than optimised against.
+
+### "Isn't your engine cheating by knowing which interventions work?"
+
+No, and the code is arranged to make that checkable. The harness's `UPLIFT` table
+decides whether an intervention actually lands. The engine has its own separate
+`BELIEVED_UPLIFT` table, and the two are allowed to disagree.
+
+If the engine read the harness's table it would have perfect knowledge of customer
+behaviour, and the expected-value rule would be measuring the simulation rather
+than the policy. `test_engine_belief_is_not_harness_truth` asserts they stay
+distinct.
 
 ### "Which of your cases failed?"
 
-17 of 238 treatment cases are on the exception list, each with the amount, what the
+25 of 238 treatment cases are on the exception list, each with the amount, what the
 diagnoser concluded, its confidence, how many actions fired, and why it stopped.
 They land there when the diagnoser returns `UNKNOWN`, confidence falls below
 threshold, the cause has no ladder, or the gate refused.
@@ -157,10 +177,10 @@ Here the outcomes are decided by Razorpay's API. I also kept the mandate archite
 
 ### "What would you do with another two weeks?"
 
-In order: verify against real `rzp_test_` credentials, which is still unverified.
-Then optimise the cost ratio, which is currently the weakest number. Then webhook
-ingestion so detection is event-driven rather than batch. Then per-customer contact
-budgets across cases, which is the most obvious compliance gap.
+In order: verify against real `rzp_test_` credentials, which is still unverified —
+that is the one thing that undermines the central claim. Then webhook ingestion, so
+detection is event-driven rather than batch. Then ranking remaining ladder steps by
+expected value rather than only refusing the ones that cannot cover their cost.
 
 ### "What is the weakest part of this?"
 
@@ -184,8 +204,9 @@ real, the response layer is modelled."
 verify` has passed with real test keys. As of writing, everything has run against
 the simulated executor.
 
-**Do not defend the 6.60 cost ratio.** Name it as the weakest number and say what
-would fix it.
+**Do not present actions-per-recovery as an optimisation target.** If asked, tell
+the story of trying it and measuring that it destroyed value. That story is worth
+more than a good-looking ratio.
 
 **Do not oversell the DLT template ids.** They are placeholders; what is demonstrated
 is the enforcement path, not real registration.
@@ -202,7 +223,7 @@ uv run razor-pay demo-refusals    # four refusals, each with a reason code
 uv run razor-pay seed --cases 400 # real test-mode Orders created
 uv run razor-pay run              # the loop, then the headline
 uv run razor-pay audit pf_0000    # the full trail for one case
-uv run pytest -q                  # 115 tests
+uv run pytest -q                  # 122 tests
 ```
 
 Have `reports/<batch>.md` open in a second pane. The sensitivity table is the slide

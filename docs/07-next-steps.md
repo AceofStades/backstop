@@ -37,29 +37,29 @@ Receipt-length limits are truncated at 40 chars but untested against the real AP
 
 ## High value
 
-### 2. Optimise the cost ratio
+### 2. ~~Optimise the cost ratio~~ — DONE, with a surprise
 
-6.60 actions per attributable recovery is the weakest number in the report, and a
-panel will ask about it.
+Built `economics.py`, then measured that optimising the ratio *destroyed* net value:
+6.60 → 6.31 on the ratio, −Rs 2,522 on the money. Threshold now sits at break-even
+and the report leads with net value instead. Full sweep in
+[`05-worklog.md`](05-worklog.md).
 
-The engine currently walks a ladder to exhaustion regardless of expected value. It
-should stop when expected recovery falls below action cost. That needs a cost model
-per channel (an API retry is nearly free; a WhatsApp message is not) and an expected
-uplift per remaining ladder step — the latter already exists in `UPLIFT`, though as
-an assumption rather than a measurement.
+**What remains:** the engine only *refuses* actions that cannot cover their own
+cost. It does not *rank* remaining ladder steps by expected value, or reorder a
+ladder so the highest-EV step fires first. That is the real version of this work
+and is still open.
 
-Concretely: add an early-stop rule in `policy.decide()` comparing
-`amount_at_risk × remaining_uplift` against `cumulative_action_cost`. Report the
-ratio before and after.
+### 3. ~~Per-customer contact budgets~~ — DONE
 
-### 3. Per-customer contact budgets
+`max_contacts_per_customer` (4 per 7 days), counted from the ledger across every
+case belonging to that customer. Refuses 8 contacts in the current batch.
 
-The attempt cap is per **case**. A customer with three failed payments at one
-merchant can receive three separate contact sequences. That is the most obvious
-compliance gap and the one a regulator would notice first.
+Building it also exposed that the seeder drew customer refs from a 9,000-wide pool,
+making repeat customers vanish — an unrealistic population that flattered the
+engine. Replaced with a 120-customer pool and a heavy tail.
 
-Needs a customer-level ledger query in `mandate.check()` — the data is already there
-via `customer_ref`, so this is a new check rather than new plumbing.
+**What remains:** the budget is per customer *per merchant*. A customer transacting
+with several merchants on one platform could still be contacted by each.
 
 ### 4. Webhook ingestion
 

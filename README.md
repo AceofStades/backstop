@@ -17,18 +17,24 @@ On a 400-case batch, against a 162-case held-out control group:
 
 | | |
 |---|---|
-| **Incremental recovery** | **+29.6 pp** (95% CI +20.9 to +38.2) |
-| **Incremental money recovered** | **Rs 85,321** |
-| Gross recovered in treatment | Rs 138,951 |
-| ...of which would have arrived anyway | Rs 53,630 |
-| Diagnosis accuracy vs ground truth | 95.4% over 238 cases |
-| Actions fired per attributable recovery | 6.60 |
-| Exceptions it could not resolve | 17 of 238 |
+| **Incremental recovery** | **+30.4 pp** (95% CI +21.7 to +39.1) |
+| **Incremental money recovered** | **Rs 102,869** |
+| **Net value** (after action costs) | **Rs 100,297** |
+| Gross recovered in treatment | Rs 167,251 |
+| ...of which would have arrived anyway | Rs 64,381 |
+| Diagnosis accuracy vs ground truth | 95.0% over 238 cases |
+| Exceptions it could not resolve | 25 of 238 |
 
 The number that matters is the **incremental** one. Gross recovery overstates the
-agent by Rs 53,630, because a real customer whose payment fails often just tops up
+agent by Rs 64,381, because a real customer whose payment fails often just tops up
 and retries without anybody doing anything. An agent that takes credit for those
 is measuring the world, not itself.
+
+Net value subtracts what the actions cost to fire. It is the headline cost metric
+rather than actions-per-recovery, for a reason worth stating: tightening the
+expected-value threshold *improved* actions-per-recovery from 6.60 to 6.31 while
+destroying Rs 2,522 of net value. A ratio improves when you cut its denominator,
+which is not the same as making money. See [`docs/05-worklog.md`](docs/05-worklog.md).
 
 Reproduce: `uv run razor-pay seed --cases 400 --simulated && uv run razor-pay run --simulated`
 
@@ -66,6 +72,11 @@ Indian recovery communication is regulated, so the constraints are structural:
 - **RBI**: no customer contact outside **08:00–19:00** local time — voice, SMS and
   instant messaging alike.
 - **TRAI TCCCPR**: every A2P message must carry a **DLT-registered template id**.
+
+Contacts are also capped **per customer**, not only per case. A customer with
+several failed payments at one merchant would otherwise receive several
+independent contact sequences, each individually compliant and collectively
+harassment. In the current batch that cap refuses 8 contacts.
 
 Both are checked in `mandate.check()`, which sits in front of every money-moving
 and customer-contacting call. The LLM proposes; the gate disposes. It cannot be
@@ -116,11 +127,11 @@ estimate:
 
 | Baseline scale | Control rate | Treatment rate | Lift |
 |---:|---:|---:|---:|
-| 0.50x | 7.4% | 42.0% | +34.6 pp |
-| 0.75x | 11.1% | 45.4% | +34.3 pp |
-| 1.00x | 17.9% | 47.5% | +29.6 pp |
-| 1.25x | 23.5% | 50.0% | +26.5 pp |
-| 1.50x | 28.4% | 53.4% | +25.0 pp |
+| 0.50x | 8.6% | 41.6% | +33.0 pp |
+| 0.75x | 13.6% | 43.3% | +29.7 pp |
+| 1.00x | 17.9% | 48.3% | +30.4 pp |
+| 1.25x | 23.5% | 52.9% | +29.5 pp |
+| 1.50x | 29.0% | 54.6% | +25.6 pp |
 
 The lift survives every baseline tested. That is a stronger claim than any single
 number.
@@ -157,6 +168,7 @@ refuses to act and routes the case to the exception list.
 | Module | Role |
 |---|---|
 | `taxonomy.py` | Razorpay error codes -> root causes, with retryability |
+| `economics.py` | Action costs and the engine's own believed uplift |
 | `diagnose.py` | Deterministic map, LLM fallback, confidence routing |
 | `policy.py` | Escalation ladders and stopping rules |
 | `mandate.py` | The gate: caps, velocity, RBI window, DLT templates |
@@ -210,7 +222,7 @@ uv run razor-pay run                             # runs the loop, writes reports
 uv run razor-pay report                          # print the report
 uv run razor-pay audit pf_0000                   # full audit trail for one case
 uv run razor-pay demo-refusals                   # the four refusal scenarios
-uv run pytest                                    # 115 tests
+uv run pytest                                    # 122 tests
 ```
 
 Add `--simulated` to `seed` and `run` to skip Razorpay entirely, and `--no-llm` to
@@ -232,8 +244,9 @@ experiment is not evidence. The batch is powered from roughly 200 cases up.
   eliminated by it.
 - Test mode does not reproduce real issuer downtime distributions, so
   timing-based interventions are argued directionally rather than proven.
-- 6.60 actions per attributable recovery is a high cost ratio. The contact-cost
-  side of the ledger is measured but not yet optimised against.
+- Action cost is measured and subtracted, but the engine only refuses actions that
+  fail to cover their own cost. It does not yet rank remaining ladder steps by
+  expected value.
 - The uplift parameters encode a belief about which interventions work. They are
   stated explicitly so they can be argued with, but they are not measured from
   production data.

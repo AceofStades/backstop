@@ -134,6 +134,38 @@ the strictest rule to everything.
 
 ---
 
+## Per-customer contact budgets
+
+The attempt cap is per **case**. That is not enough on its own: a customer with
+three failed payments at one merchant would receive three independent contact
+sequences, each individually compliant and collectively harassment.
+
+So the mandate carries a second, orthogonal cap:
+
+```python
+max_contacts_per_customer: int = 4
+contact_budget_window_hours: int = 168   # 7 days
+```
+
+Counted from the **ledger**, across every case belonging to that customer, joined
+on `customer_ref`. Not an in-memory tally — it survives a restart and it spans
+cases, which is the entire point.
+
+Silent rail-side actions do not consume the budget. A retry touches no customer, so
+`Channel.NONE` actions are exempt; `test_contact_budget_does_not_block_silent_rail_actions`
+pins that.
+
+**This check was initially dead code**, and the reason is instructive: the seeder
+drew customer refs from a 9,000-wide pool for 400 cases, so repeat customers were
+essentially impossible and no customer ever owned enough cases to hit the cap. The
+seeded population was unrealistic in a way that flattered the engine. With a
+realistic 120-customer pool and a heavy tail — a customer who failed once is
+disproportionately likely to fail again — the batch now has customers owning 15
+failing cases, and the budget refuses 8 contacts. See
+[`05-worklog.md`](05-worklog.md).
+
+---
+
 ## Bounded authority
 
 Beyond the two regulators, the mandate bounds what the agent may do at all:
@@ -142,7 +174,8 @@ Beyond the two regulators, the mandate bounds what the agent may do at all:
 |---|---:|---|
 | `per_action_cap_paise` | Rs 25,000 | One oversized action |
 | `velocity_cap_paise` | Rs 50,00,000 / 24h | Sustained runaway spending |
-| `max_attempts_per_case` | 3 | Harassing one customer |
+| `max_attempts_per_case` | 3 | Over-contacting on one case |
+| `max_contacts_per_customer` | 4 / 7 days | Harassing one customer across cases |
 | `expires_at` | +30 days | Authority outliving its grant |
 | `merchant_id` | scoped | Acting for the wrong merchant |
 
@@ -190,9 +223,9 @@ none moves money.
   model how consent was obtained or withdrawn. Production needs a consent store with
   an audit trail of its own.
 - **DND / NCPR registry.** TRAI maintains do-not-disturb preferences. Not modelled.
-- **Per-customer frequency caps across merchants.** The attempt cap is per case. A
-  customer with several failed payments at one merchant could receive several
-  contacts.
+- **Frequency caps across merchants.** The contact budget is per customer *per
+  merchant*. A customer transacting with several merchants on the same platform
+  could still be contacted by each independently.
 - **Language and content rules.** Template *content* has requirements beyond
   registration. Only the presence of a registered id is enforced.
 - **State-level variation.** Treated as uniformly national.

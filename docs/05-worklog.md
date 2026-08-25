@@ -164,6 +164,87 @@ or it reads as untested code.
 
 ---
 
+## Bug 6 — the efficiency optimisation that destroyed value
+
+**Found by** measuring the thing that was supposedly being improved.
+
+`docs/07-next-steps.md` listed "optimise the cost ratio" as the highest-value work
+after verification: 6.60 actions per attributable recovery is a bad-looking number.
+
+Built `economics.py` — action costs per channel, a believed-uplift table, and an
+expected-value stopping rule in `policy.decide()`. Set the threshold at 2.0, on the
+intuition that an action should look *clearly* worthwhile rather than merely
+break-even.
+
+It worked, in the sense that the ratio improved: **6.60 → 6.31**.
+
+Then swept the threshold and measured **net value** (incremental recovery minus
+what the actions cost) instead of the ratio:
+
+| threshold | actions | action cost | incremental | **net value** | act/rec |
+|---:|---:|---:|---:|---:|---:|
+| 0.0 (off) | 429 | Rs 3,486 | Rs 85,321 | **Rs 81,836** | 6.60 |
+| 1.0 | 407 | Rs 2,936 | Rs 84,571 | **Rs 81,636** | 6.36 |
+| 1.5 | 389 | Rs 2,496 | Rs 82,782 | **Rs 80,287** | 6.38 |
+| 2.0 | 372 | Rs 2,080 | Rs 81,394 | **Rs 79,314** | 6.31 |
+| 3.0 | 355 | Rs 1,666 | Rs 78,403 | **Rs 76,738** | 6.34 |
+
+**The optimisation was destroying money.** At threshold 2.0 it saved Rs 1,406 in
+action costs and gave up Rs 3,927 in recovery — a net loss of Rs 2,522, while the
+ratio it was aimed at got *better*.
+
+**Why.** Action costs are tiny relative to ticket sizes. A WhatsApp send costs
+Rs 25 against an average ticket in the low thousands. Almost any action with a
+non-trivial success probability pays for itself, so filtering on a margin above
+break-even mostly discards profitable actions.
+
+**Fix.** Threshold moved to 1.0 — pure break-even, which encodes a *principle*
+("never fire an action that loses money in expectation") rather than a tuning
+parameter. A ticket floor for contacting customers was tested at Rs 100 and Rs 200
+and removed: it cost net value at every level.
+
+The deeper fix was to the **metric**. The report now leads its cost section with
+net value and explicitly labels actions-per-recovery as reported-but-not-optimised-
+against. `test_break_even_threshold_is_a_principle_not_a_tuning_knob` guards
+against someone re-tuning it upward later.
+
+**Lesson.** A ratio improves when its denominator is cut. That is not the same as
+making money, and optimising a ratio without checking the absolute number is how
+efficiency metrics quietly destroy value. This is the most useful thing the project
+learned about itself.
+
+---
+
+## Bug 7 — the compliance check that could never fire
+
+**Found by** building the per-customer contact budget and watching it do nothing.
+
+Added a contact budget capping customer contacts across *cases*, not just within
+one case — the obvious gap, since a customer with several failed payments would
+otherwise receive several independent sequences, each individually compliant.
+
+The batch report showed zero refusals from it.
+
+**Cause.** Seeding drew customer refs as `cust_{rng.randint(1000, 9999)}` — a
+9,000-wide pool for 400 cases. Repeat customers were essentially impossible, so no
+customer ever owned enough cases to hit a cross-case budget.
+
+**Why it mattered beyond the test.** The seeded population was unrealistic in a way
+that flattered the engine. Real merchants have repeat customers, and a customer
+whose payment failed once is disproportionately likely to fail again — same thin
+balance, same dead instrument, same flaky issuer. A uniform draw across a wide pool
+models a world with no repeat offenders, which is not the world.
+
+**Fix.** A 120-customer pool with a heavy tail: 35% of cases draw from the troubled
+sixth of the population. The batch now has customers owning up to 15 failing cases,
+and the contact budget refuses 8 contacts.
+
+**Lesson.** A compliance check that never fires is indistinguishable from one that
+does not work. When a new guard shows zero activations, suspect the test data
+before concluding the guard is unnecessary.
+
+---
+
 ## Calibration: batch size
 
 Not a bug — a measurement that changed the defaults. Ran the full pipeline at four
@@ -197,6 +278,9 @@ for. Defaults are now 400 at 40%.
 | `test_control_arm_never_fires_an_action` | The held-out arm is genuinely held out |
 | `test_control_baseline_is_not_zero` | The control group could actually have recovered |
 | `test_metrics_report_incremental_not_gross` | Incremental ≤ gross, and a control arm exists |
+| `test_engine_belief_is_not_harness_truth` | The policy does not have perfect knowledge of the simulated customer |
+| `test_break_even_threshold_is_a_principle_not_a_tuning_knob` | Guards Bug 6 from being reintroduced |
+| `test_contact_budget_is_counted_across_cases_for_one_customer` | The per-customer cap actually spans cases |
 
 Several are parametrized across every enum member, so adding a `RootCause`,
 `InterventionType` or `Channel` without handling it fails the suite rather than
