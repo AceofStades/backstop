@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from razor_pay import taxonomy
+from razor_pay import economics, taxonomy
 from razor_pay.schemas import (
     Channel,
     Decision,
@@ -219,6 +219,19 @@ def decide(case: RecoveryCase, diagnosis: Diagnosis, now: datetime) -> Decision:
     if step.type is InterventionType.RETRY_PAYDAY_WINDOW:
         step.delay_seconds = seconds_to_next_payday(now)
 
+    # Economics: an action that cannot clear its own cost is not worth firing,
+    # even though the ladder permits it. This is a stopping rule, so it retires
+    # the case rather than skipping to the next rung.
+    worth_it, econ_reason = economics.is_worth_firing(
+        case.amount_at_risk_paise,
+        diagnosis.root_cause,
+        step.type,
+        step.channel,
+        case.attempts_made,
+    )
+    if not worth_it:
+        return stop(f"Stopped on expected value. {econ_reason}")
+
     profile = taxonomy.profile_for(diagnosis.root_cause)
     is_retry = step.type in {
         InterventionType.RETRY_NOW,
@@ -239,7 +252,7 @@ def decide(case: RecoveryCase, diagnosis: Diagnosis, now: datetime) -> Decision:
         reason=(
             f"Cause '{diagnosis.root_cause}' ({profile.note}) -> step "
             f"{case.attempts_made + 1}/{len(ladder)}: {step.type} via {step.channel}, "
-            f"firing {fires_at.isoformat()}."
+            f"firing {fires_at.isoformat()}. {econ_reason}"
         ),
         policy_version=POLICY_VERSION,
     )

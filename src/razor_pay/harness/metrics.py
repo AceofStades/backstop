@@ -13,6 +13,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from razor_pay import economics
 from razor_pay.harness.runner import CaseTrace
 from razor_pay.schemas import Arm, RecoveryCase, RootCause
 
@@ -49,6 +50,7 @@ def compute(
     arms = {Arm.TREATMENT: ArmStats(), Arm.CONTROL: ArmStats()}
 
     actions_fired = 0
+    action_cost_paise = 0
     contacts = 0
     deferrals = 0
     refusals: dict[str, int] = {}
@@ -66,6 +68,8 @@ def compute(
             stats.recovered_paise += t.amount_paise
 
         actions_fired += t.actions_fired
+        action_cost_paise += t.action_cost_paise
+        contacts += t.contacts
         deferrals += t.deferrals
         for code in t.refusals:
             refusals[code] = refusals.get(code, 0) + 1
@@ -134,6 +138,13 @@ def compute(
         "incremental_paise": incremental_paise,
         "attributed_to_intervention": attributed,
         "actions_fired": actions_fired,
+        "contacts": contacts,
+        "action_cost_paise": action_cost_paise,
+        # The metric that matters: money kept after paying for the actions that
+        # kept it. The actions-per-recovery ratio below is reported alongside it
+        # but is NOT an optimisation target -- a ratio improves when its
+        # denominator is cut, which is not the same as making money.
+        "net_value_paise": incremental_paise - action_cost_paise,
         "actions_per_incremental_recovery": (
             actions_fired / attributed if attributed else float("inf")
         ),
@@ -178,10 +189,14 @@ def render_markdown(m: dict, batch_id: str, sensitivity: list[dict] | None = Non
         "",
         "## Cost of acting",
         "",
-        f"- Actions fired: {m['actions_fired']}",
+        f"- **Net value: {_rs(m['net_value_paise'])}** "
+        f"(incremental recovery minus what the actions cost)",
+        f"- Action cost: {_rs(m['action_cost_paise'])} across "
+        f"{m['actions_fired']} action(s), {m['contacts']} of them customer contacts",
         f"- Recoveries attributable to an intervention: {m['attributed_to_intervention']}",
         f"- Actions per attributable recovery: "
-        f"{m['actions_per_incremental_recovery']:.2f}",
+        f"{m['actions_per_incremental_recovery']:.2f} "
+        f"(reported, not optimised against -- see net value above)",
         f"- Contacts deferred for the RBI window: {m['deferrals']}",
         "",
         "## Diagnosis",

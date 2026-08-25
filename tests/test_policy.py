@@ -131,3 +131,63 @@ def test_payday_delay_always_lands_on_a_payday(day):
     delay = policy.seconds_to_next_payday(moment)
     assert delay >= policy.MIN_PAYDAY_GAP_SECONDS
     assert (moment + timedelta(seconds=delay)).day in policy.PAYDAY_DAYS
+
+
+def test_engine_belief_is_not_harness_truth():
+    """The engine's uplift estimate must stay separate from the simulated truth.
+
+    If the policy engine read the harness's UPLIFT table it would have perfect
+    knowledge of customer behaviour, and any expected-value rule built on it
+    would be measuring the simulation rather than the policy.
+    """
+    from razor_pay import economics
+    from razor_pay.harness import response_model
+
+    assert economics.BELIEVED_UPLIFT is not response_model.UPLIFT
+    assert economics.BELIEVED_ATTEMPT_DECAY != response_model.ATTEMPT_DECAY
+    # And they must actually disagree somewhere, not merely be copies.
+    shared = set(economics.BELIEVED_UPLIFT) & set(response_model.UPLIFT)
+    assert any(
+        economics.BELIEVED_UPLIFT[k] != response_model.UPLIFT[k] for k in shared
+    ), "engine belief is identical to harness truth; that is perfect knowledge"
+
+
+def test_break_even_threshold_is_a_principle_not_a_tuning_knob():
+    """1.0 encodes 'never fire an action that loses money in expectation'.
+
+    Raising it above break-even was measured and destroyed net value; see
+    docs/05-worklog.md. Guard against someone re-tuning it upward.
+    """
+    from razor_pay import economics
+
+    assert economics.MIN_EXPECTED_VALUE_RATIO == 1.0
+
+
+def test_action_below_its_own_cost_is_refused():
+    from razor_pay import economics
+    from razor_pay.schemas import Channel
+
+    # Tiny ticket, expensive channel: expected gain cannot cover the send.
+    worth_it, reason = economics.is_worth_firing(
+        amount_at_risk_paise=1_000,
+        cause=RootCause.INSUFFICIENT_FUNDS,
+        intervention=InterventionType.SEND_PAYMENT_LINK,
+        channel=Channel.WHATSAPP,
+        attempt_index=0,
+    )
+    assert not worth_it
+    assert "ratio" in reason.lower()
+
+
+def test_large_ticket_clears_the_threshold():
+    from razor_pay import economics
+    from razor_pay.schemas import Channel
+
+    worth_it, _ = economics.is_worth_firing(
+        amount_at_risk_paise=500_000,
+        cause=RootCause.INSUFFICIENT_FUNDS,
+        intervention=InterventionType.RETRY_PAYDAY_WINDOW,
+        channel=Channel.NONE,
+        attempt_index=0,
+    )
+    assert worth_it

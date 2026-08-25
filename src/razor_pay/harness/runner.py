@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+from razor_pay import economics
 from razor_pay import mandate as mandate_mod
 from razor_pay import policy
 from razor_pay.diagnose import Diagnoser
@@ -25,6 +26,7 @@ from razor_pay.ledger import Ledger, Stage
 from razor_pay.mandate import Mandate
 from razor_pay.schemas import (
     Arm,
+    Channel,
     InterventionType,
     RecoveryCase,
     RefusalCode,
@@ -48,6 +50,8 @@ class CaseTrace:
     deferrals: int = 0
     refusals: list[str] = field(default_factory=list)
     interventions: list[str] = field(default_factory=list)
+    action_cost_paise: int = 0
+    contacts: int = 0
     recovered: bool = False
     recovered_via: str = "none"  # "self" | "intervention" | "none"
     stop_reason: str = ""
@@ -207,6 +211,11 @@ class BatchRunner:
             case.attempts_made = attempt_no
             trace.actions_fired += 1
             trace.interventions.append(decision.intervention.type.value)
+            trace.action_cost_paise += economics.action_cost_paise(
+                decision.intervention.channel
+            )
+            if decision.intervention.channel is not Channel.NONE:
+                trace.contacts += 1
 
             if self.response.intervention_lands(
                 case.case_id, true_cause, decision.intervention.type, attempt_no - 1
