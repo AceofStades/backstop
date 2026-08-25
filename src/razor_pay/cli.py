@@ -18,6 +18,7 @@ from razor_pay.harness.metrics import compute, render_markdown, sensitivity_swee
 from razor_pay.harness.response_model import ResponseModel
 from razor_pay.harness.runner import BatchRunner, CaseTrace
 from razor_pay.ledger import Ledger
+from razor_pay.ledger import Stage as LedgerStage
 from razor_pay.mandate import Mandate
 from razor_pay.schemas import Arm, LeakType
 from razor_pay.store import Store
@@ -98,11 +99,36 @@ def verify(db: str) -> None:
 
     store = _store(db)
     click.secho(f"  Store: {store.path}", fg="green")
+
+    # A BEFORE DELETE trigger never fires on an empty table, so probing an empty
+    # ledger reports a false FAIL. Write a probe row first, in a transaction that
+    # is always rolled back so the real ledger is untouched.
+    ok = False
     try:
-        store.conn.execute("DELETE FROM ledger")
-        click.secho("  Append-only ledger: FAIL (delete succeeded)", fg="red")
-    except Exception:
-        click.secho("  Append-only ledger: PASS (DELETE refused by trigger)", fg="green")
+        store.conn.execute("SAVEPOINT preflight")
+        Ledger(store, "preflight").record(
+            ts=datetime.now(timezone.utc),
+            case_id="preflight_probe",
+            stage=LedgerStage.DETECT,
+            reason="append-only probe; rolled back",
+        )
+        try:
+            store.conn.execute("DELETE FROM ledger WHERE case_id = 'preflight_probe'")
+        except Exception:
+            ok = True
+        try:
+            store.conn.execute("UPDATE ledger SET reason = 'x' WHERE case_id = 'preflight_probe'")
+            ok = False
+        except Exception:
+            ok = ok and True
+    finally:
+        store.conn.execute("ROLLBACK TO preflight")
+        store.conn.execute("RELEASE preflight")
+
+    if ok:
+        click.secho("  Append-only ledger: PASS (UPDATE and DELETE refused)", fg="green")
+    else:
+        click.secho("  Append-only ledger: FAIL (mutation succeeded)", fg="red")
     store.close()
 
 
@@ -309,6 +335,50 @@ def audit(case_id: str, db: str) -> None:
         if e["idempotency_key"]:
             click.echo(f"         idem   : {e['idempotency_key']}")
     store.close()
+
+
+@main.command()
+@click.option("--runs", default=12, show_default=True, help="Independent batches.")
+@click.option("--cases", default=400, show_default=True, help="Cases per batch.")
+@click.option("--leaks", default=DEFAULT_LEAKS, show_default=True)
+@click.option("--control-fraction", default=0.4, show_default=True)
+def replicate(runs, cases, leaks, control_fraction) -> None:
+    """Pool many independent batches, so the headline is not one lucky draw.
+
+    Always simulated: this measures the policy under the response model, which is
+    the thing that varies, and avoids creating thousands of test-mode orders.
+    """
+    from razor_pay.harness import replicate as rep
+
+    leak_types = [LeakType(name.strip()) for name in leaks.split(",") if name.strip()]
+    now = datetime.now(timezone.utc)
+
+    click.echo(f"Running {runs} independent batches of {cases}...")
+    with click.progressbar(length=runs, label="  batches") as bar:
+        result = rep.replicate(
+            runs, cases, leak_types, control_fraction, now, progress=lambda _: bar.update(1)
+        )
+
+    REPORTS.mkdir(exist_ok=True)
+    stamp = now.strftime("replication_%Y%m%d_%H%M%S")
+    (REPORTS / f"{stamp}.md").write_text(rep.render_markdown(result))
+    (REPORTS / f"{stamp}.json").write_text(json.dumps(result, indent=2, default=str))
+
+    lo, hi = result["pooled_ci_pp"]
+    click.secho("\n== Pooled across replications ==", bold=True)
+    click.echo(
+        f"  mean lift      : {result['mean_lift_pp']:+.1f} pp "
+        f"(95% CI of mean {lo:+.1f} .. {hi:+.1f})"
+    )
+    click.echo(
+        f"  between-batch  : sd {result['sd_lift_pp']:.1f} pp, "
+        f"range {result['min_lift_pp']:+.1f} .. {result['max_lift_pp']:+.1f}"
+    )
+    click.echo(
+        f"  mean net value : Rs {result['mean_net_value_paise'] / 100:,.0f} "
+        f"(sd Rs {result['sd_net_value_paise'] / 100:,.0f})"
+    )
+    click.secho(f"\nReport: reports/{stamp}.md", fg="green")
 
 
 @main.command("demo-refusals")

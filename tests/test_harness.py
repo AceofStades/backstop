@@ -304,3 +304,40 @@ def test_case_ids_are_unique_across_batches():
     ids_a = {c.case_id for c in first}
     ids_b = {c.case_id for c in second}
     assert not (ids_a & ids_b), "case ids collide across batches"
+
+
+def test_replication_pools_across_batches():
+    """A single batch's lift is one draw; the pooled estimate must be reported."""
+    from datetime import timezone
+
+    from razor_pay.harness import replicate as rep
+    from razor_pay.schemas import LeakType
+
+    now = datetime(2026, 8, 25, 12, 0, tzinfo=timezone.utc)
+    result = rep.replicate(
+        runs=4,
+        cases=80,
+        leaks=[LeakType.PAYMENT_FAILURE],
+        control_fraction=0.4,
+        now=now,
+    )
+    assert result["runs"] == 4
+    assert len(result["per_run"]) == 4
+    # The pooled interval is around the mean and narrower than the raw spread.
+    lo, hi = result["pooled_ci_pp"]
+    assert lo <= result["mean_lift_pp"] <= hi
+    assert result["min_lift_pp"] <= result["mean_lift_pp"] <= result["max_lift_pp"]
+
+
+def test_replication_is_deterministic():
+    """Same inputs must pool to the same number, or the report is not reproducible."""
+    from datetime import timezone
+
+    from razor_pay.harness import replicate as rep
+    from razor_pay.schemas import LeakType
+
+    now = datetime(2026, 8, 25, 12, 0, tzinfo=timezone.utc)
+    kwargs = dict(
+        runs=3, cases=60, leaks=[LeakType.PAYMENT_FAILURE], control_fraction=0.4, now=now
+    )
+    assert rep.replicate(**kwargs)["mean_lift_pp"] == rep.replicate(**kwargs)["mean_lift_pp"]
