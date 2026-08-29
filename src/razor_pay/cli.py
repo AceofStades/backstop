@@ -10,9 +10,10 @@ import click
 
 from razor_pay import adapters as _adapters  # noqa: F401  (registration side effects)
 from razor_pay.adapters import ADAPTERS, SeedClient, get_adapter
+from razor_pay.adapters.base import SeedingFailed
 from razor_pay.config import LiveKeyRefused, assert_test_mode, load_settings
 from razor_pay.diagnose import Diagnoser
-from razor_pay.execute import build_executor
+from razor_pay.execute import TEST_MODE_PAYMENT_LINK_CAP, build_executor
 from razor_pay.harness.assign import assign_all
 from razor_pay.harness.metrics import compute, render_markdown, sensitivity_sweep
 from razor_pay.harness.response_model import ResponseModel
@@ -144,7 +145,12 @@ def verify(db: str) -> None:
 @click.option("--seed", default=42, show_default=True)
 @click.option("--db", default="data/recovery.db", show_default=True)
 @click.option("--simulated/--real", default=False, help="Skip real Razorpay calls.")
-def seed(cases, leaks, control_fraction, seed, db, simulated) -> None:
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Create 3 real Orders to prove credentials work, then stop without saving.",
+)
+def seed(cases, leaks, control_fraction, seed, db, simulated, dry_run) -> None:
     """Build a batch. Creates real test-mode Orders unless --simulated."""
     import random
 
@@ -153,14 +159,42 @@ def seed(cases, leaks, control_fraction, seed, db, simulated) -> None:
     batch_id = now.strftime("batch_%Y%m%d_%H%M%S")
     rng = random.Random(seed)
 
-    client = SeedClient()
+    def note_retry(attempt: int, delay: float, exc: BaseException) -> None:
+        click.secho(
+            f"  retry {attempt} in {delay:.1f}s after {type(exc).__name__}: "
+            f"{str(exc)[:80]}",
+            fg="yellow",
+        )
+
+    client = SeedClient(on_retry=note_retry)
     if not simulated and settings.has_razorpay:
         assert_test_mode(settings.razorpay_key_id)
         import razorpay
 
         client = SeedClient(
-            razorpay.Client(auth=(settings.razorpay_key_id, settings.razorpay_key_secret))
+            razorpay.Client(auth=(settings.razorpay_key_id, settings.razorpay_key_secret)),
+            on_retry=note_retry,
         )
+
+    if dry_run:
+        # Prove the credential path on three calls rather than four hundred.
+        if not client.is_real:
+            raise click.ClickException(
+                "--dry-run needs real credentials. Set RAZORPAY_KEY_ID/SECRET in .env."
+            )
+        click.echo("Dry run: creating 3 real test-mode Orders...")
+        for i in range(3):
+            order = client.create_order(
+                10000, f"dryrun_{now.strftime('%H%M%S')}_{i}", {"purpose": "dry-run"}
+            )
+            click.secho(f"  created {order.get('id')}", fg="green")
+        click.secho(
+            f"\nCredentials work. {client.real_calls} call(s), "
+            f"{client.retries} retry(ies). Nothing saved.",
+            fg="green",
+            bold=True,
+        )
+        return
 
     leak_types = [LeakType(name.strip()) for name in leaks.split(",") if name.strip()]
     per_leak = cases // len(leak_types)
@@ -169,11 +203,18 @@ def seed(cases, leaks, control_fraction, seed, db, simulated) -> None:
     # Case ids carry the batch's time token so they stay unique across batches.
     token = batch_id.rsplit("_", 1)[-1]
     all_cases = []
-    for i, leak in enumerate(leak_types):
-        n = per_leak + (remainder if i == 0 else 0)
-        all_cases.extend(
-            get_adapter(leak).seed(n, rng, now, "merch_demo_001", client, token)
-        )
+    try:
+        for i, leak in enumerate(leak_types):
+            n = per_leak + (remainder if i == 0 else 0)
+            all_cases.extend(
+                get_adapter(leak).seed(n, rng, now, "merch_demo_001", client, token)
+            )
+    except SeedingFailed as exc:
+        raise click.ClickException(
+            f"{exc}\n\nNothing was saved. {client.real_calls} order(s) were created "
+            f"before the failure; they are harmless test-mode entities. "
+            f"Re-run once the cause is resolved, or use --simulated."
+        ) from exc
 
     # Assignment happens here, at intake, before anything has looked at a case.
     assign_all(all_cases, control_fraction)
@@ -203,6 +244,8 @@ def seed(cases, leaks, control_fraction, seed, db, simulated) -> None:
     click.echo(f"  control/treatment: {n_ctrl}/{len(all_cases) - n_ctrl}")
     click.echo(f"  money at risk    : Rs {total / 100:,.0f}")
     click.echo(f"  real Razorpay orders created: {client.real_calls}")
+    if client.retries:
+        click.echo(f"  transient failures retried    : {client.retries}")
     store.close()
 
 
@@ -226,6 +269,33 @@ def run(batch, db, no_llm, simulated, force) -> None:
     if not cases:
         raise click.ClickException(f"Batch {batch_id} has no cases.")
 
+    executor = build_executor(settings, force_simulated=simulated)
+
+    # Razorpay test mode caps Payment Links at 30 per account. Roughly a third of
+    # interventions are link-type, so a large real-API batch runs out partway and
+    # the resulting numbers understate the policy for a reason that has nothing to
+    # do with the policy. Warn before spending the budget rather than after.
+    if getattr(executor, "name", "") == "razorpay-test":
+        est_links = int(len(cases) * 0.35)
+        if est_links > TEST_MODE_PAYMENT_LINK_CAP:
+            click.secho(
+                f"  WARNING: ~{est_links} payment links expected, but Razorpay test "
+                f"mode caps them at {TEST_MODE_PAYMENT_LINK_CAP}.",
+                fg="yellow",
+            )
+            click.secho(
+                f"  Link-type interventions will fail once the cap is hit, and the "
+                f"reported lift will be understated.",
+                fg="yellow",
+            )
+            click.secho(
+                f"  For integration proof use a small batch (--cases 60). For "
+                f"statistical claims use `razor-pay replicate`, which is simulated.",
+                fg="yellow",
+            )
+            if not click.confirm("  Continue anyway?", default=False):
+                raise click.Abort()
+
     ledger = Ledger(store, batch_id)
     # Idempotency means a second run is a no-op, which would otherwise overwrite a
     # good report with an empty one. Fail loudly instead.
@@ -242,14 +312,16 @@ def run(batch, db, no_llm, simulated, force) -> None:
         ledger=ledger,
         mandate=mandate,
         diagnoser=Diagnoser(use_llm=not no_llm),
-        executor=build_executor(settings, force_simulated=simulated),
+        executor=executor,
         response=response,
     )
 
     click.echo(f"Running {len(cases)} cases in {batch_id}...")
     traces = runner.run(cases)
 
-    metrics = compute(traces, cases, response.describe())
+    metrics = compute(
+        traces, cases, response.describe(), getattr(executor, "degraded_links", 0)
+    )
     sweep = sensitivity_sweep(traces, cases)
     report = render_markdown(metrics, batch_id, sweep)
 
@@ -273,6 +345,12 @@ def run(batch, db, no_llm, simulated, force) -> None:
     click.echo(f"  gross recovered  : Rs {metrics['gross_recovered_paise'] / 100:,.0f}")
     click.echo(f"  actions fired    : {metrics['actions_fired']}")
     click.echo(f"  exceptions       : {len(metrics['exceptions'])}")
+    if metrics.get("degraded_artifacts"):
+        click.secho(
+            f"  degraded links   : {metrics['degraded_artifacts']} "
+            f"(test-mode quota spent; not real artifacts)",
+            fg="yellow",
+        )
     click.echo(f"  ledger entries   : {ledger.count()}")
     click.secho(f"\nReport: reports/{batch_id}.md", fg="green")
     store.close()

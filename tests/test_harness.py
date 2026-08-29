@@ -15,7 +15,7 @@ from razor_pay.harness.response_model import ResponseModel
 from razor_pay.harness.runner import BatchRunner
 from razor_pay.ledger import Ledger, Stage
 from razor_pay.mandate import Mandate
-from razor_pay.schemas import Arm, RootCause
+from razor_pay.schemas import Arm, FailureEvidence, LeakType, RecoveryCase, RootCause
 from razor_pay.store import Store
 
 NOW = datetime(2026, 8, 24, 12, 0, tzinfo=timezone.utc)
@@ -341,3 +341,34 @@ def test_replication_is_deterministic():
         runs=3, cases=60, leaks=[LeakType.PAYMENT_FAILURE], control_fraction=0.4, now=now
     )
     assert rep.replicate(**kwargs)["mean_lift_pp"] == rep.replicate(**kwargs)["mean_lift_pp"]
+
+
+def test_degraded_artifacts_are_reported_not_swallowed():
+    """A spent test-mode link quota must be visible in the report.
+
+    The count is passed in from the executor; an earlier version shadowed the
+    parameter with a local initialiser and silently reported zero.
+    """
+    from razor_pay.harness.metrics import compute, render_markdown
+    from razor_pay.harness.runner import CaseTrace
+    from razor_pay.schemas import Arm
+
+    traces = [CaseTrace(case_id="c1", arm=Arm.TREATMENT, amount_paise=1000)]
+    cases = [
+        RecoveryCase(
+            case_id="c1",
+            leak_type=LeakType.PAYMENT_FAILURE,
+            merchant_id="m1",
+            customer_ref="cust",
+            amount_at_risk_paise=1000,
+            failure_evidence=FailureEvidence(error_code="insufficient_funds"),
+            detected_at=NOW,
+            arm=Arm.TREATMENT,
+        )
+    ]
+    metrics = compute(traces, cases, {}, degraded_artifacts=11)
+    assert metrics["degraded_artifacts"] == 11
+    assert "11 link-type action(s)" in render_markdown(metrics, "b1")
+
+    clean = compute(traces, cases, {}, degraded_artifacts=0)
+    assert "No degraded artifacts" in render_markdown(clean, "b1")

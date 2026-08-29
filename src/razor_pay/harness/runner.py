@@ -199,6 +199,7 @@ class BatchRunner:
                 outcome="executed" if result.executed else "execution_failed",
                 detail={
                     "razorpay_entity_id": result.razorpay_entity.get("id"),
+                    "degraded": result.razorpay_entity.get("degraded", False),
                     "error": result.error,
                 },
             )

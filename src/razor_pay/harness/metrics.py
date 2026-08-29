@@ -44,7 +44,10 @@ def _two_proportion_ci(p1: float, n1: int, p0: float, n0: int) -> tuple[float, f
 
 
 def compute(
-    traces: list[CaseTrace], cases: list[RecoveryCase], response_params: dict
+    traces: list[CaseTrace],
+    cases: list[RecoveryCase],
+    response_params: dict,
+    degraded_artifacts: int = 0,
 ) -> dict:
     by_id = {c.case_id: c for c in cases}
     arms = {Arm.TREATMENT: ArmStats(), Arm.CONTROL: ArmStats()}
@@ -138,6 +141,7 @@ def compute(
         "incremental_paise": incremental_paise,
         "attributed_to_intervention": attributed,
         "actions_fired": actions_fired,
+        "degraded_artifacts": degraded_artifacts,
         "contacts": contacts,
         "action_cost_paise": action_cost_paise,
         # The metric that matters: money kept after paying for the actions that
@@ -268,6 +272,14 @@ def render_markdown(m: dict, batch_id: str, sensitivity: list[dict] | None = Non
         "",
         "- **Real:** every Razorpay Order and Payment Link created by this run is a",
         "  genuine test-mode entity with a live id, verifiable in the dashboard.",
+        (
+            f"- **Degraded:** {m['degraded_artifacts']} link-type action(s) could not "
+            f"produce a real artifact, because Razorpay test mode allows only 30 "
+            f"Payment Links per business for the lifetime of the account. These are "
+            f"flagged `degraded: true` in the ledger and are NOT real artifacts."
+            if m.get("degraded_artifacts")
+            else "- No degraded artifacts: every action produced a real entity."
+        ),
         "- **Modelled:** whether a customer pays after an intervention. Parameters:",
         f"  `{m['response_params']}`.",
         "- The control arm exists precisely because the modelled layer would",

@@ -20,6 +20,7 @@ import random
 from datetime import datetime, timedelta
 from typing import Callable, Protocol
 
+from razor_pay.retry import Throttle, with_retry
 from razor_pay.schemas import LeakType, RecoveryCase
 
 
@@ -49,12 +50,20 @@ def case_id(prefix: str, token: str, index: int) -> str:
     return f"{prefix}_{token}_{index:04d}" if token else f"{prefix}_{index:04d}"
 
 
+class SeedingFailed(RuntimeError):
+    """Raised when a real Razorpay artifact could not be created."""
+
+
 class SeedClient:
     """Creates the real Razorpay artifact backing each seeded case."""
 
-    def __init__(self, razorpay_client=None) -> None:
+    def __init__(self, razorpay_client=None, on_retry=None) -> None:
         self.client = razorpay_client
         self.real_calls = 0
+        self.retries = 0
+        self.failures = 0
+        self.on_retry = on_retry
+        self.throttle = Throttle()
 
     @property
     def is_real(self) -> bool:
@@ -63,7 +72,9 @@ class SeedClient:
     def create_order(self, amount_paise: int, receipt: str, notes: dict) -> dict:
         if self.client is None:
             return {"id": f"sim_order_{abs(hash(receipt)) % 10**12:012d}", "simulated": True}
-        try:
+
+        def call() -> dict:
+            self.throttle.wait()
             self.real_calls += 1
             return dict(
                 self.client.order.create(
@@ -75,8 +86,22 @@ class SeedClient:
                     }
                 )
             )
+
+        def note_retry(attempt: int, delay: float, exc: BaseException) -> None:
+            self.retries += 1
+            if self.on_retry:
+                self.on_retry(attempt, delay, exc)
+
+        try:
+            return with_retry(call, description=f"order {receipt}", on_retry=note_retry)
         except Exception as exc:
-            return {"id": f"err_order_{abs(hash(receipt)) % 10**12:012d}", "error": str(exc)}
+            # A batch seeded with placeholder ids would claim real API artifacts it
+            # does not have. Fail the seed instead, so the failure is visible.
+            self.failures += 1
+            raise SeedingFailed(
+                f"Order creation failed for {receipt} after retries: "
+                f"{type(exc).__name__}: {exc}"
+            ) from exc
 
 
 def sample_amount_paise(rng: random.Random) -> int:
