@@ -346,6 +346,111 @@ sample; it says nothing about having picked the sample that flattered you.
 
 ---
 
+## First contact with the real API
+
+Everything up to this point ran against the simulated executor. The day the
+`rzp_test_` credentials arrived, the loop ran end to end against real Razorpay
+test mode for the first time — and four things broke that simulation had never
+exercised. All four are worth recording, because each is a case where the
+*simulator was more permissive than reality*.
+
+### Bug 12 — rate limiting, caught by luck
+
+A 400-case seed makes 400 sequential order-creation calls. It drew **124 "Too many
+requests" responses**.
+
+Retry with jittered exponential backoff had been added an hour earlier as
+speculative prep, on the reasoning that "400 sequential calls with no backoff is
+the most likely thing to break." It absorbed all 124 and the seed completed. Without
+it the run would have died partway and left a half-populated batch.
+
+**Follow-up fix.** Recovering from a limit 124 times is not the same as not hitting
+it. Added a `Throttle` that paces calls to a minimum interval, so the run avoids the
+limit rather than repeatedly discovering it.
+
+**Lesson.** The prep was speculative and it paid for itself on the first real run.
+Worth remembering next time the temptation is to skip hardening because the happy
+path works.
+
+### Bug 13 — an intervention the executor could not perform
+
+```
+ValueError: No Razorpay action defined for soft_nudge
+```
+
+`SOFT_NUDGE` is in the policy ladder for `CUSTOMER_CANCELLED`, but the executor's
+dispatch only knew `LINK_TYPES` and `ORDER_TYPES`, and `SOFT_NUDGE` was in neither.
+Seventeen cases hit it.
+
+**Why simulation missed it.** `SimulatedExecutor` computed
+`kind = "link" if type in LINK_TYPES else "order"` — a total function that silently
+classified the unknown type as an order and returned a plausible fake id. The gap
+existed from the day the ladder was written and was invisible for the entire build.
+
+**Fix.** A soft nudge is a customer contact that should still give them a way to
+pay, so it maps to a link like the others.
+
+**Lesson.** A permissive stub is worse than a strict one. The simulator should have
+raised on an unmapped type exactly as the real client did.
+
+### Bug 14 — not every 5xx is transient
+
+The retry classifier checked `500 <= status < 600` and treated it as retryable.
+Razorpay returns its test-mode payment-link quota as a `ServerError`, so every
+quota failure burned all five attempts on something that could never succeed —
+slowing the run and obscuring the real cause.
+
+**Fix.** An explicit permanent-condition list checked *before* the status code:
+quota exhaustion, authentication failure, invalid key. Conservative in the right
+direction — anything not positively identified as permanent is still retried.
+
+### Bug 15 — an account quota masquerading as a policy result
+
+The most consequential finding.
+
+**Razorpay test mode allows 30 Payment Links per business, for the lifetime of the
+account.** Documented, not resettable by backoff, and support must be contacted to
+raise it. The first 400-case live run spent the entire budget.
+
+Every subsequent link-type intervention then failed, the runner retired those cases
+as execution failures, and the reported lift fell to +15.0 pp — below the entire
+simulated range. **The number looked like a policy result and was actually an
+account quota.** That is precisely the class of error the project exists to avoid,
+arriving from an unexpected direction.
+
+**Fix.** Three parts:
+
+1. The executor detects quota exhaustion once, then **degrades**: it records a
+   placeholder flagged `degraded: true` rather than failing the case. The
+   measurement survives; the artifact claim does not silently inflate.
+2. The report states how many artifacts were degraded and why, in the same section
+   that distinguishes real from modelled.
+3. `run` warns before starting a real batch large enough to exceed the quota, and
+   points at `replicate` for statistical claims.
+
+**The resulting honest split**, which is what should be said to a panel:
+
+| | |
+|---|---|
+| Real-API run | proves the integration: real orders, real ids, real error codes, real rate limits handled |
+| `replicate` (simulated) | provides the statistical claim, +24.7 pp pooled |
+
+Claiming one live run gave both would have been the overreach. A 60-case live run
+came in at +12.7 pp with a 95% CI of −12.8 to +38.2 — wide enough to be worthless
+as evidence, exactly as the batch-size calibration predicted.
+
+### Bug 16 — a shadowed parameter that hid the whole finding
+
+`compute()` gained a `degraded_artifacts` parameter, but the counter-initialisation
+block a few lines below still had `degraded_artifacts = 0`, shadowing it. The report
+cheerfully printed "No degraded artifacts: every action produced a real entity"
+while 17 placeholders sat in the ledger.
+
+A three-line bug that would have turned the honest disclosure into a false claim.
+`test_degraded_artifacts_are_reported_not_swallowed` pins both branches.
+
+---
+
 ## Calibration: batch size
 
 Not a bug — a measurement that changed the defaults. Ran the full pipeline at four
@@ -366,7 +471,7 @@ for. Defaults are now 400 at 40%.
 
 ## What the tests actually guard
 
-130 tests, but a handful carry most of the weight:
+131 tests, but a handful carry most of the weight:
 
 | Test | Invariant |
 |---|---|
@@ -386,6 +491,7 @@ for. Defaults are now 400 at 40%.
 | `test_case_ids_are_unique_across_batches` | Two seeds do not collide (Bug 8) |
 | `test_partial_case_id_resolves_despite_underscore_wildcard` | `_` escaped in LIKE (Bug 8) |
 | `test_replication_is_deterministic` | The pooled headline is reproducible |
+| `test_degraded_artifacts_are_reported_not_swallowed` | A spent link quota is disclosed, not hidden (Bug 16) |
 
 Several are parametrized across every enum member, so adding a `RootCause`,
 `InterventionType` or `Channel` without handling it fails the suite rather than

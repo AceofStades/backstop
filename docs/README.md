@@ -10,9 +10,9 @@ particular thing is built the way it is.
 | [`02-architecture.md`](02-architecture.md) | The pipeline, module by module, and the seams between them |
 | [`03-measurement.md`](03-measurement.md) | The control arm, the response model, and what the numbers do and do not prove |
 | [`04-compliance.md`](04-compliance.md) | RBI and TRAI constraints, and why they live in code rather than prompts |
-| [`05-worklog.md`](05-worklog.md) | What was built in what order, and the eleven bugs found — several of them instructive |
+| [`05-worklog.md`](05-worklog.md) | What was built in what order, and the sixteen bugs found — including four that only the live API exposed |
 | [`06-panel-prep.md`](06-panel-prep.md) | Anticipated architecture-interview questions and honest answers |
-| [`07-next-steps.md`](07-next-steps.md) | What is unverified, what is unfinished, and what to do first |
+| [`07-next-steps.md`](07-next-steps.md) | What is done, what is unfinished, and what to do first |
 
 ## The one-paragraph version
 

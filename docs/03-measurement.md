@@ -12,10 +12,12 @@ and volunteering it is worth more than any headline figure.
 
 ### Real
 
-Genuine Razorpay test-mode API state:
+Genuine Razorpay test-mode API state. **Verified against live credentials**, not
+asserted:
 
-- Every `Order` and `PaymentLink` created by seeding or by an intervention is a real
-  test-mode entity with a live id, verifiable in the dashboard
+- Every `Order` created by seeding or by an intervention is a real test-mode entity
+  with a live id (`order_TVb2FtNl23Fcxh`, …), verifiable in the dashboard
+- `PaymentLink` creation is real too, up to an account limit — see Degraded below
 - The failure taxonomy is Razorpay's published one, not invented
 - Policy decisions, gate checks, idempotency, and the ledger are real code paths
   under test — not narrated, not stubbed
@@ -25,6 +27,20 @@ Genuine Razorpay test-mode API state:
 **Whether a customer pays after an intervention.** Test mode will happily create an
 Order; it will not produce a synthetic human who decides to pay it. Those draws come
 from `harness/response_model.py` with parameters stated openly in the report.
+
+### Degraded
+
+**Razorpay test mode allows 30 Payment Links per business, for the lifetime of the
+account.** Once spent, link-type interventions cannot produce a real artifact.
+
+Retiring every such case would let an account quota masquerade as a policy result —
+that actually happened once, dragging a live run's lift to +15.0 pp, below the
+entire simulated range, for reasons having nothing to do with the policy. So the
+executor degrades instead: it records a placeholder flagged `degraded: true`, the
+measurement survives, and the report states how many artifacts were degraded and
+why.
+
+A degraded artifact is **not** a real one and is never counted as such.
 
 ### Injected
 
@@ -40,6 +56,28 @@ code.
 > The temptation is to blur these — to let "real test-mode API" imply the whole
 > pipeline is real. Do not. The blur is exactly what an experienced reviewer is
 > listening for, and being caught at it costs more than the modelled layer does.
+
+---
+
+## What the live run does and does not establish
+
+The loop has run end to end against real Razorpay test mode. That establishes the
+**integration**: real orders with live ids, real error codes, real rate limits
+handled, the gate and ledger exercised on real calls.
+
+It does **not** establish the statistical claim. A 60-case live run — the largest
+the payment-link quota comfortably allows — produced +12.7 pp with a 95% CI of
+−12.8 to +38.2. Wide enough to be worthless as evidence, exactly as the batch-size
+calibration predicts.
+
+So the two claims come from two places, and saying so is the honest framing:
+
+| Claim | Source |
+|---|---|
+| The integration works | live test-mode run |
+| +24.7 pp incremental | `razor-pay replicate`, simulated, 12 pooled batches |
+
+Asserting that one live run delivered both would be the overreach.
 
 ---
 

@@ -43,9 +43,15 @@ It signals immediately that you know what a recovery number is worth.
 
 ### "How do I know these numbers aren't made up?"
 
-The action layer is real: every Order and Payment Link is a genuine Razorpay
-test-mode entity with a live id, verifiable in the dashboard. The customer response
-layer is modelled and I say so in the README and in the report itself.
+The action layer is real and verified against live credentials: Orders are genuine
+Razorpay test-mode entities with live ids, verifiable in the dashboard. The customer
+response layer is modelled, and I say so in the README and in the report itself.
+
+Worth separating two claims that are easy to blur. The **integration** is
+established by a live test-mode run. The **statistic** — +24.7 pp — comes from
+`replicate`, which is simulated and pooled over 12 batches. A live run at the scale
+Razorpay's test-mode quotas allow gives a 95% CI of −12.8 to +38.2, which is not
+evidence of anything. I would rather say that than imply one run gave me both.
 
 What that buys: the policy engine, the gate, idempotency, and the ledger are real
 code paths under test. What it does not buy: any claim about real-world recovery
@@ -79,6 +85,29 @@ alone. Across 0.5× to 1.5× the assumed baseline, the lift ranges +33.0 to +25.
 representative batch.
 It survives every baseline tested. That is a weaker claim than a measured baseline
 and a stronger one than a point estimate.
+
+### "What broke when you first pointed it at the real API?"
+
+Four things, and they are the most useful part of the build.
+
+Rate limiting: a 400-case seed drew 124 "Too many requests" responses. Backoff
+absorbed them; I then added pacing so it avoids the limit rather than recovering
+from it 124 times.
+
+An intervention type — `soft_nudge` — that the executor could not actually perform.
+It had been broken since the day the ladder was written, and the simulator hid it
+by classifying any unknown type as an order and returning a plausible fake id. A
+permissive stub is worse than a strict one.
+
+A permanent error classified as transient: Razorpay returns its payment-link quota
+as a 5xx, so every quota failure burned all its retries.
+
+And the one that mattered: **Razorpay test mode allows 30 Payment Links per
+business for the lifetime of the account.** My first run spent them, every
+subsequent link case was retired as a failure, and the reported lift dropped to
++15.0 pp — below the entire simulated range. The number looked like a policy result
+and was actually an account quota. The executor now degrades and flags those
+artifacts explicitly rather than letting the quota contaminate the measurement.
 
 ### "Isn't this just a retry loop with extra steps?"
 
@@ -192,8 +221,8 @@ Here the outcomes are decided by Razorpay's API. I also kept the mandate archite
 
 ### "What would you do with another two weeks?"
 
-In order: verify against real `rzp_test_` credentials, which is still unverified —
-that is the one thing that undermines the central claim. Then webhook ingestion, so
+Ask Razorpay to raise the 30-payment-link test-mode cap, so the live run can cover
+link-type interventions at scale instead of only orders. Then webhook ingestion, so
 detection is event-driven rather than batch. Then ranking remaining ladder steps by
 expected value rather than only refusing the ones that cannot cover their cost.
 
@@ -215,9 +244,12 @@ is in the report, labelled as overstating the agent.
 **Do not imply the customer response is real.** The phrase is "the action layer is
 real, the response layer is modelled."
 
-**Do not claim the numbers are backed by real API artifacts** until `razor-pay
-verify` has passed with real test keys. As of writing, everything has run against
-the simulated executor.
+**Do not let the two claims blur.** The live run proves the integration; the pooled
+simulated runs provide the statistic. Say both, separately, in that order.
+
+**Do not describe a degraded artifact as real.** Once the 30-link test-mode quota is
+spent, link-type actions record a flagged placeholder. The report discloses the
+count; do not round it away.
 
 **Do not present actions-per-recovery as an optimisation target.** If asked, tell
 the story of trying it and measuring that it destroyed value. That story is worth
@@ -239,7 +271,7 @@ uv run razor-pay seed --cases 400 # real test-mode Orders created
 uv run razor-pay run              # the loop, then this batch's numbers
 uv run razor-pay replicate --runs 12   # the pooled headline
 uv run razor-pay audit pf_0000    # the full trail for one case
-uv run pytest -q                  # 130 tests
+uv run pytest -q                  # 131 tests
 ```
 
 Have `reports/<batch>.md` open in a second pane. The sensitivity table is the slide

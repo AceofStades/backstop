@@ -135,17 +135,33 @@ use `--simulated` instead.
 
 `docs/` carries the reasoning, not just the API surface. Before changing measurement
 or compliance code, read `docs/03-measurement.md` and `docs/04-compliance.md`;
-`docs/05-worklog.md` records seven bugs and why each was subtle. Keep reported
+`docs/05-worklog.md` records sixteen bugs and why each was subtle — bugs 12-16 are
+the ones only the live API exposed. Keep reported
 numbers in README and docs in sync with the latest batch — stale figures in a doc
 that claims measurement rigour are worse than no doc.
 
-## Current state
+## Real-API constraints
 
-The engine has only ever run against the simulated executor; no `rzp_test_`
-credentials have been exercised yet. The day-one assumption that test keys scope
-correctly and order/payment-link creation behaves as expected is **unverified** —
-run `razor-pay verify` with real test keys before trusting any claim that the numbers
-are backed by real API artifacts.
+Verified against live `rzp_test_` credentials. Orders work at scale; two limits bite:
+
+- **Rate limiting.** A 400-case seed draws ~124 `Too many requests` responses.
+  `retry.py` handles this with jittered backoff plus a `Throttle` that paces calls.
+  Never remove the throttle to make a run faster.
+- **30 Payment Links per business, for the lifetime of the test account.** Not
+  resettable by backoff; support must raise it. Once spent, the executor records a
+  placeholder flagged `degraded: true` rather than failing the case — otherwise an
+  account quota masquerades as a policy result (it did once, dragging a live run to
+  +15.0 pp). A degraded artifact is never counted as real, and the report always
+  discloses the count.
+
+**Two claims, two sources — never blur them.** The live run proves the
+*integration*. `replicate` (simulated, pooled) provides the *statistic*. A live run
+at quota-permitted scale has a CI spanning zero and is not evidence of effect.
+
+Not every 5xx is transient: Razorpay returns the link quota as a `ServerError`, so
+`retry.is_transient` checks a permanent-condition list before the status code.
+
+## Current state
 
 Uncommitted work may still be pending; check `git status` before assuming the tree is
 clean.

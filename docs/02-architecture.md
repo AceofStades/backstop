@@ -264,6 +264,7 @@ messaged.
 | `schemas.py` | 143 | Every type crossing a stage boundary |
 | `taxonomy.py` | 145 | Razorpay error codes → causes, with retryability |
 | `economics.py` | 118 | Action costs, the engine's believed uplift, break-even stopping |
+| `retry.py` | 130 | Backoff, transient/permanent classification, call pacing |
 | `diagnose.py` | 179 | Three-tier classification |
 | `policy.py` | 245 | Escalation ladders and stopping rules |
 | `mandate.py` | 191 | The gate |
@@ -274,4 +275,4 @@ messaged.
 | `cli.py` | 304 | Six commands |
 | `adapters/` | 391 | Three leaks + registration plumbing |
 | `harness/` | 1050 | Assignment, response model, runner, metrics, replication, scenarios |
-| `tests/` | 700 | 130 tests |
+| `tests/` | 730 | 131 tests |

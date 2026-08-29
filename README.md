@@ -43,8 +43,16 @@ expected-value threshold *improved* actions-per-recovery from 6.60 to 6.31 while
 destroying Rs 2,522 of net value. A ratio improves when you cut its denominator,
 which is not the same as making money. See [`docs/05-worklog.md`](docs/05-worklog.md).
 
-Single batch, with real test-mode Orders:
-`uv run razor-pay seed --cases 400 && uv run razor-pay run`
+Two different claims, from two different places — worth keeping separate:
+
+| Claim | Source |
+|---|---|
+| The integration works | live test-mode run: `razor-pay seed --cases 60 && razor-pay run` |
+| +24.7 pp incremental | `razor-pay replicate --runs 12`, simulated and pooled |
+
+A live run at the scale Razorpay's test-mode quotas allow gives a 95% CI of −12.8
+to +38.2 — the integration is real, but the sample is far too small to be evidence.
+Claiming one live run delivered both would be the overreach.
 
 ---
 
@@ -114,10 +122,19 @@ intervention landed. Only the second gets credit.
 This is the first thing to ask about any hackathon metric, so it is stated up
 front rather than buried.
 
-**Real.** Every Order and Payment Link is a genuine Razorpay test-mode entity with
-a live id, created through the API and verifiable in the dashboard. The failure
-taxonomy is Razorpay's published one. The policy decisions, the gate checks, the
-idempotency and the ledger are all real code paths under test.
+**Real.** Verified against live `rzp_test_` credentials, not asserted. Orders are
+genuine Razorpay test-mode entities with live ids (`order_TVb2FtNl23Fcxh`, …),
+created through the API and verifiable in the dashboard. The failure taxonomy is
+Razorpay's published one. The policy decisions, gate checks, idempotency and ledger
+are all real code paths under test, exercised on real calls including real rate
+limits.
+
+**Degraded.** Razorpay test mode allows **30 Payment Links per business, for the
+lifetime of the account**. Once spent, link-type interventions record a placeholder
+flagged `degraded: true` rather than failing the case — otherwise an account quota
+would masquerade as a policy result, which is exactly what happened on the first
+live run before this was handled. The report always states how many artifacts were
+degraded. A degraded artifact is never counted as a real one.
 
 **Modelled.** Whether a customer pays after an intervention. Test mode will create
 an Order but it will not produce a synthetic human who decides to pay it. Those
@@ -231,7 +248,7 @@ uv run razor-pay replicate --runs 12             # pooled headline across batche
 uv run razor-pay report                          # print the report
 uv run razor-pay audit pf_0000                   # full audit trail for one case
 uv run razor-pay demo-refusals                   # the four refusal scenarios
-uv run pytest                                    # 130 tests
+uv run pytest                                    # 131 tests
 ```
 
 Add `--simulated` to `seed` and `run` to skip Razorpay entirely, and `--no-llm` to

@@ -7,31 +7,22 @@ interesting to build.
 
 ## Blocking
 
-### 1. Verify against real `rzp_test_` credentials
+### ~~1. Verify against real `rzp_test_` credentials~~ — DONE
 
-**Status: unverified.** Every run so far has used the simulated executor. The
-day-one assumption — that test keys scope correctly and order/payment-link creation
-behaves as documented — has never been exercised.
+Credentials verified. `verify` passes the test-mode interlock, reaches the API, and
+the loop has run end to end against real Razorpay test mode. Orders are real
+entities with live ids.
 
-This is the single largest risk. The README claims "every Order and Payment Link is
-a genuine Razorpay test-mode entity with a live id." That claim is currently
-unbacked.
+Four bugs surfaced on first contact, all invisible in simulation: unhandled rate
+limiting (124 responses on one seed), an intervention type the executor could not
+perform, a permanent error misclassified as transient, and the payment-link quota.
+See [`05-worklog.md`](05-worklog.md), bugs 12–16.
 
-```bash
-cp .env.example .env        # add rzp_test_ credentials
-uv run razor-pay verify     # interlock, live order creation, ledger triggers
-uv run razor-pay seed --cases 400   # without --simulated
-uv run razor-pay run
-```
-
-`verify` checks the interlock refuses non-test keys, creates a real Rs 1 test order
-to confirm reachability, and confirms the ledger triggers fire.
-
-**What could break.** Rate limits on 400 sequential order creations (the seeder has
-no backoff). Payment-link creation may require fields the code does not send.
-Receipt-length limits are truncated at 40 chars but untested against the real API.
-
-**Until this passes, do not claim the numbers are backed by real API artifacts.**
+**What remains from this item:** Razorpay test mode caps Payment Links at 30 per
+business for the lifetime of the account, and the first 400-case run spent them.
+Contacting Razorpay support to raise the cap would allow a larger live run. Not
+blocking — the honest split (live run proves integration, `replicate` provides the
+statistic) is defensible as it stands, and is arguably the better story anyway.
 
 ---
 
@@ -122,8 +113,15 @@ checks it. Actually running several merchants adds surface without adding eviden
 
 ## If time is very short
 
-Do only #1. An unverified test-mode path undermines the central claim in a way no
-amount of additional feature work compensates for.
+The blocking item is done, so what remains is polish rather than credibility
+repair. In order:
 
-Second priority is naming #2 as a known weakness in the pitch rather than fixing it
-— the panel discounts a hidden weakness far more than an acknowledged one.
+1. **Rehearse the honest split out loud** — live run proves integration,
+   `replicate` provides the statistic. It is the single most likely thing to be
+   probed, and the answer is strong if it arrives unprompted.
+2. **Ask Razorpay support to raise the payment-link cap.** Cheap, and it would let
+   the live run cover link-type interventions too.
+3. **Webhook ingestion** (#4) if there is genuine time left.
+
+Do not spend the remaining time on new leak adapters. Three is already enough to
+demonstrate the abstraction, and a fourth adds surface without adding evidence.
