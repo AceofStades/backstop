@@ -171,7 +171,7 @@ the agent does not get to claim it merely because it also acted.
 Pooled over 12 independent 400-case batches:
   Mean incremental lift: +24.7 pp (95% CI of the mean +22.8 to +26.6)
   Between-batch spread:  sd 3.3 pp, range +18.8 to +29.8
-  Mean net value:        Rs 88,839 per batch (sd Rs 20,951)
+  Mean net value:        Rs 88,839 per batch (sd Rs 20,952)
 ```
 
 **Why pooled rather than a single batch.** A single batch's lift is one draw. Across
@@ -229,7 +229,7 @@ without touching Razorpay again. `trace.interventions` exists for exactly this.
 
 Recovery numbers without cost numbers are half a story.
 
-One representative batch (mean across 12 replications: Rs 88,839, sd Rs 20,951):
+One representative batch (mean across 12 replications: Rs 88,839, sd Rs 20,952):
 
 | Metric | Value | Why it is reported |
 |---|---:|---|

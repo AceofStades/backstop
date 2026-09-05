@@ -20,7 +20,7 @@ control arm:
 |---|---|
 | **Incremental recovery** | **+24.7 pp** (95% CI of the mean +22.8 to +26.6) |
 | Between-batch spread | sd 3.3 pp, range +18.8 to +29.8 |
-| **Mean net value per batch** | **Rs 88,839** (sd Rs 20,951) |
+| **Mean net value per batch** | **Rs 88,839** (sd Rs 20,952) |
 | Diagnosis accuracy vs ground truth | ~95%, and every error is an abstention rather than a wrong cause |
 
 A single batch's lift is **one draw, not a result** — across seeds it ranges from
@@ -29,7 +29,18 @@ and get a different number, so the headline is pooled and the spread is stated.
 That spread is ordinary sampling variation, not instability: each batch's own 95%
 interval is about the right width for it.
 
-Reproduce: `uv run razor-pay replicate --runs 12 --cases 400`
+**Reproducing this from a clean clone**, with no credentials and no network:
+
+```bash
+git clone <this repo> && cd razor-pay
+uv sync --extra dev
+uv run razor-pay replicate --runs 12 --cases 400
+```
+
+Takes about three seconds and prints the table above digit for digit. The replication
+seeds each batch deterministically, so this is a genuine reproduction rather than a
+re-roll that happens to land nearby — `test_replication_is_deterministic` holds it
+there.
 
 The number that matters is the **incremental** one. On a representative batch, gross
 recovery was Rs 167,251 — but Rs 64,381 of that would have arrived anyway, because a
@@ -237,8 +248,14 @@ a reason code, logged, and moves no money:
 
 ```bash
 uv sync --extra dev
-cp .env.example .env      # add rzp_test_ credentials; optional ANTHROPIC_API_KEY
+cp .env.example .env      # optional: rzp_test_ credentials, ANTHROPIC_API_KEY
 ```
+
+**Credentials are optional.** With no `.env` at all, `verify` reports
+`no credentials -> simulated executor` and every command still runs. That is
+deliberate: the headline is a simulated, pooled statistic, so reproducing it must not
+depend on holding a Razorpay account. Credentials add the live integration, not the
+result.
 
 ```bash
 uv run razor-pay verify                          # preflight: interlock, API, ledger triggers
