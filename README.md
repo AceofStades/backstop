@@ -247,9 +247,10 @@ uv run razor-pay run                             # runs the loop, writes reports
 uv run razor-pay replicate --runs 12             # pooled headline across batches
 uv run razor-pay uplift-sensitivity              # what changes if the beliefs are wrong
 uv run razor-pay report                          # print the report
+uv run razor-pay report --html                   # same numbers as a page, for a projector
 uv run razor-pay audit pf_0000                   # full audit trail for one case
 uv run razor-pay demo-refusals                   # the four refusal scenarios
-uv run pytest                                    # 141 tests
+uv run pytest                                    # 148 tests
 ```
 
 Add `--simulated` to `seed` and `run` to skip Razorpay entirely, and `--no-llm` to

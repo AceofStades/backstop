@@ -589,7 +589,7 @@ misdiagnosis ever appears, the prose flips and names the count.
 
 ## What the tests actually guard
 
-141 tests, but a handful carry most of the weight:
+148 tests, but a handful carry most of the weight:
 
 | Test | Invariant |
 |---|---|

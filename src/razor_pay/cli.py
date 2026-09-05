@@ -359,15 +359,60 @@ def run(batch, db, no_llm, simulated, force) -> None:
 @main.command()
 @click.option("--batch", default=None)
 @click.option("--db", default="data/recovery.db", show_default=True)
-def report(batch, db) -> None:
-    """Print the saved report for a batch."""
+@click.option(
+    "--html",
+    "as_html",
+    is_flag=True,
+    help="Render a self-contained HTML page instead of printing markdown.",
+)
+def report(batch, db, as_html) -> None:
+    """Print the saved report for a batch, or render it as a page.
+
+    `--html` exists for the projector, not for the reviewer: markdown and
+    terminal output are unreadable from across a room. It re-renders the same
+    saved metrics -- nothing is recomputed, so the page cannot disagree with the
+    markdown next to it.
+    """
     store = _store(db)
     batch_id = batch or store.latest_batch_id()
     store.close()
-    path = REPORTS / f"{batch_id}.md"
-    if not path.exists():
-        raise click.ClickException(f"No report at {path}. Run `run` first.")
-    click.echo(path.read_text())
+
+    if not as_html:
+        path = REPORTS / f"{batch_id}.md"
+        if not path.exists():
+            raise click.ClickException(f"No report at {path}. Run `run` first.")
+        click.echo(path.read_text())
+        return
+
+    from razor_pay.harness import uplift_sensitivity as us
+    from razor_pay.harness.html_report import render_html
+
+    data_path = REPORTS / f"{batch_id}.json"
+    if not data_path.exists():
+        raise click.ClickException(f"No saved metrics at {data_path}. Run `run` first.")
+    saved = json.loads(data_path.read_text())
+
+    # The pooled headline, if a replication has ever been run, so the page can
+    # say plainly that one batch is one draw.
+    pooled = None
+    replications = sorted(REPORTS.glob("replication_*.json"))
+    if replications:
+        pooled = json.loads(replications[-1].read_text())
+
+    page = render_html(
+        saved["metrics"],
+        batch_id,
+        sensitivity=saved.get("sensitivity"),
+        uplift={
+            "decisions": us.decision_stability(),
+            "rankings": us.ranking_stability(trials=2000),
+        },
+        pooled=pooled,
+    )
+    out = REPORTS / f"{batch_id}.html"
+    out.write_text(page)
+    click.secho(f"Wrote {out}", fg="green")
+    click.echo(f"  open file://{out.resolve()}")
 
 
 @main.command()

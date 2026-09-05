@@ -23,6 +23,7 @@ uv run razor-pay run              # run the loop, write reports/<batch>.md and .
 uv run razor-pay replicate --runs 12  # pooled headline across independent batches
 uv run razor-pay uplift-sensitivity   # what decisions change if BELIEVED_UPLIFT is wrong
 uv run razor-pay report           # print the saved report
+uv run razor-pay report --html    # render the same saved metrics as a standalone page
 uv run razor-pay audit pf_0000    # full append-only audit trail for one case
 uv run razor-pay demo-refusals    # the four gate-refusal scenarios
 
@@ -130,6 +131,12 @@ rather than on another cause: abstention routes to the exception list, whereas a
 confident wrong cause fires a specific wrong intervention. Never collapse these
 into one accuracy figure — `test_report_distinguishes_abstention_from_confident_error`
 guards the distinction.
+
+**The HTML page renders, it does not compute.** `harness/html_report.py` takes the
+metrics dict `compute()` already produced and formats it. Nothing on that page may be
+calculated there, or the page and the markdown report could disagree and both look
+authoritative. It exists for a projector, where markdown and terminal output are
+unreadable — not as a dashboard, and not as a second reporting path.
 
 **Report incremental, never gross.** Gross recovery counts cases that would have
 recovered anyway. The control baseline is an assumption, so the headline always ships

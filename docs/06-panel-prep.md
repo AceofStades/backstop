@@ -317,6 +317,12 @@ is the enforcement path, not real registration.
 opposite kind of work: it says which decisions survive the numbers being wrong.
 Sensitivity is not accuracy, and saying so first is stronger than being corrected.
 
+**Do not let the page do the talking.** It renders the same numbers as the markdown
+and computes none of them. If someone asks where a figure comes from, the answer is
+`compute()` and the saved JSON, not the page. Say so — a presentation layer that could
+disagree with the report would be a defect, and it is worth being the one to point out
+that it cannot.
+
 **Do not report diagnosis accuracy as a single number.** Split it — deterministic
 100%, fallback much lower — and say that every error lands on `UNKNOWN` rather than
 on another cause. The shape of the error is the point; the percentage is not.
@@ -335,8 +341,13 @@ uv run razor-pay run              # the loop, then this batch's numbers
 uv run razor-pay replicate --runs 12   # the pooled headline
 uv run razor-pay audit pf_0000    # the full trail for one case
 uv run razor-pay uplift-sensitivity  # what changes if the beliefs are wrong
-uv run pytest -q                  # 141 tests
+uv run pytest -q                  # 148 tests
 ```
 
-Have `reports/<batch>.md` open in a second pane. The sensitivity table is the slide
-worth lingering on.
+Have `razor-pay report --html` open in a browser on the second screen. It renders the
+same saved metrics as the markdown — nothing is recomputed — but the effect estimate is
+drawn as a forest plot against a zero line, which is the one graphic worth putting in
+front of a panel. It answers the question they are actually asking (does the interval
+clear zero?) rather than the one a bar chart answers (which bar is taller?).
+
+The sensitivity table is the slide worth lingering on.

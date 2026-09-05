@@ -272,7 +272,7 @@ messaged.
 | `store.py` | 169 | SQLite schema and case persistence |
 | `ledger.py` | 144 | Append-only audit API |
 | `config.py` | 61 | Settings and the test-mode interlock |
-| `cli.py` | 513 | Seven commands |
+| `cli.py` | 551 | Seven commands |
 | `adapters/` | 391 | Three leaks + registration plumbing |
-| `harness/` | 1535 | Assignment, response model, runner, metrics, replication, uplift sensitivity, scenarios |
-| `tests/` | 1154 | 141 tests |
+| `harness/` | 2145 | Assignment, response model, runner, metrics, replication, uplift sensitivity, HTML readout, scenarios |
+| `tests/` | 1290 | 148 tests |

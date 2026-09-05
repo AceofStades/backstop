@@ -113,6 +113,14 @@ wearing an adapter's clothes.
 for an architecture review. A dashboard is demo polish that competes for time with
 the verification work above.
 
+*Amended:* `report --html` was built, and it is not a dashboard. The distinction is
+load-bearing. A dashboard is a second system with its own state, queries and refresh
+path; this is a formatter that takes the metrics dict `compute()` already produced and
+lays it out so it can be read from across a room. It computes nothing, so it cannot
+disagree with the markdown report sitting next to it. The problem it solves is a
+presentation problem — five minutes, a projector, an audience that cannot read a
+300-line markdown file while someone talks over it — not an architecture one.
+
 **Real DLT registration.** Out-of-band telecom process. The enforcement path is what
 matters and is demonstrated; swapping placeholder ids for real ones is config.
 
