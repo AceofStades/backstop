@@ -14,6 +14,7 @@ particular thing is built the way it is.
 | [`06-panel-prep.md`](06-panel-prep.md) | Anticipated architecture-interview questions and honest answers |
 | [`07-next-steps.md`](07-next-steps.md) | What is done, what is unfinished, and what to do first |
 | [`08-submission.md`](08-submission.md) | Drafted answers to the twelve application fields, and the plan for the five-minute video |
+| [`09-pitch-script.md`](09-pitch-script.md) | The five-minute pitch word for word, with screen directions, exact commands and measured timings |
 
 ## The one-paragraph version
 

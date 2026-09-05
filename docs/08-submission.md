@@ -174,7 +174,8 @@ protecting: the ability to answer questions about every line in the repo.
 
 ### Structure
 
-Five minutes, roughly:
+The full word-for-word script, with screen directions and measured
+timings, is in [`09-pitch-script.md`](09-pitch-script.md). Summary:
 
 | Time | Beat | On screen |
 |---|---|---|
