@@ -161,7 +161,9 @@ use `--simulated` instead.
 `docs/` carries the reasoning, not just the API surface. Before changing measurement
 or compliance code, read `docs/03-measurement.md` and `docs/04-compliance.md`;
 `docs/05-worklog.md` records sixteen bugs and why each was subtle — bugs 12-16 are
-the ones only the live API exposed. Keep reported
+the ones only the live API exposed. `docs/08-submission.md` holds the drafted
+application answers and the video plan; personal fields there are marked `[FILL]`
+and must never be invented. Keep reported
 numbers in README and docs in sync with the latest batch — stale figures in a doc
 that claims measurement rigour are worse than no doc.
 

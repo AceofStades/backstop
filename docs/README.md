@@ -13,6 +13,7 @@ particular thing is built the way it is.
 | [`05-worklog.md`](05-worklog.md) | What was built in what order, and the sixteen bugs found — including four that only the live API exposed — plus what the sensitivity and confusion analyses changed |
 | [`06-panel-prep.md`](06-panel-prep.md) | Anticipated architecture-interview questions and honest answers |
 | [`07-next-steps.md`](07-next-steps.md) | What is done, what is unfinished, and what to do first |
+| [`08-submission.md`](08-submission.md) | Drafted answers to the twelve application fields, and the plan for the five-minute video |
 
 ## The one-paragraph version
 
