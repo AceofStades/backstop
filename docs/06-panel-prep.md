@@ -109,6 +109,61 @@ subsequent link case was retired as a failure, and the reported lift dropped to
 and was actually an account quota. The executor now degrades and flags those
 artifacts explicitly rather than letting the quota contaminate the measurement.
 
+### "Your uplift numbers are made up. How do you know any of this holds?"
+
+They are. `economics.BELIEVED_UPLIFT` is an estimate, and it cannot be measured
+without production data — nobody knows P(recovery | cause, intervention) for a
+merchant that has never run these interventions.
+
+So I do not defend the numbers. I report the sensitivity to them.
+`razor-pay uplift-sensitivity` sweeps them across a half-to-double band and asks
+which decisions actually change. 8 of 18 ladder steps are sensitive. All 8 cost
+money to fire. All 10 free steps are stable.
+
+That is the mechanism, not a coincidence: belief only decides something when
+there is a cost to weigh it against. A rail-side retry is close enough to free
+that no plausible uplift refuses it. A WhatsApp message has to earn its place.
+
+And be clear about what that does not prove — sensitivity is not accuracy. Those
+decisions are stable because ticket sizes dwarf action costs, not because the
+estimates are right. What it rules out is the sharper version of your question:
+that the headline is an artifact of numbers picked to produce it.
+
+### "Why don't you rank the ladder steps by expected value?"
+
+Because I measured whether that would be trustworthy, and it is not. Perturbing
+each belief independently, the top-ranked step holds only 72–86% of the time for
+six of the seven multi-step ladders. Only `collect_expired` is stable, at 98.6%.
+
+A computed ranking built on numbers that shaky is harder to defend than an
+explicit policy choice, not easier — it launders a guess into something that
+looks derived. So ladder order stays a stated policy decision, and the analysis
+is in the repo showing why.
+
+This is the one time the sensitivity work talked me out of building something
+rather than into it.
+
+### "95% accuracy on diagnosis — what about the other 5%?"
+
+The interesting answer is that it is not error in the way the number implies.
+
+Two splits matter. First, by method: the deterministic path scores 100%, because
+it is a lookup table on a documented Razorpay error code and cannot be wrong. The
+whole error budget belongs to the ambiguous fallback slice. Averaging them
+produced a figure that described neither.
+
+Second, and more important — the confusion matrix shows every misclassification
+landing on `UNKNOWN`. Not one case was diagnosed as the wrong *cause*.
+
+Those are different failures wearing the same percentage. Wrong-as-`UNKNOWN`
+costs a recovery: the case routes to the exception list and a human sees it.
+Wrong-as-another-cause would fire a confident, specific, wrong intervention — the
+exact failure the cause-keyed design exists to prevent. That count is zero.
+
+So the residual is abstention, not error, and the headline understates the safety
+property. The report computes that distinction; if a confident misdiagnosis ever
+appears, the prose flips and names the count.
+
 ### "Isn't this just a retry loop with extra steps?"
 
 No, and the clearest case is `invalid_vpa`. The taxonomy marks it
@@ -258,6 +313,14 @@ more than a good-looking ratio.
 **Do not oversell the DLT template ids.** They are placeholders; what is demonstrated
 is the enforcement path, not real registration.
 
+**Do not claim the uplift sensitivity validates the uplift numbers.** It does the
+opposite kind of work: it says which decisions survive the numbers being wrong.
+Sensitivity is not accuracy, and saying so first is stronger than being corrected.
+
+**Do not report diagnosis accuracy as a single number.** Split it — deterministic
+100%, fallback much lower — and say that every error lands on `UNKNOWN` rather than
+on another cause. The shape of the error is the point; the percentage is not.
+
 ---
 
 ## Live demo sequence
@@ -271,7 +334,8 @@ uv run razor-pay seed --cases 400 # real test-mode Orders created
 uv run razor-pay run              # the loop, then this batch's numbers
 uv run razor-pay replicate --runs 12   # the pooled headline
 uv run razor-pay audit pf_0000    # the full trail for one case
-uv run pytest -q                  # 131 tests
+uv run razor-pay uplift-sensitivity  # what changes if the beliefs are wrong
+uv run pytest -q                  # 141 tests
 ```
 
 Have `reports/<batch>.md` open in a second pane. The sensitivity table is the slide

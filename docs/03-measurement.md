@@ -263,6 +263,106 @@ simulation rather than the policy. A real engine only ever has a prior, estimate
 from history and wrong at the edges. Two tables that are allowed to disagree model
 that honestly.
 
+### Sensitivity to that belief, because it cannot be measured
+
+`BELIEVED_UPLIFT` is the one input to the engine that is asserted rather than
+observed. Nobody knows P(recovery | cause, intervention) for a merchant that has
+never run these interventions, and every expected-value decision rests on it.
+
+The move already made for the control baseline applies here: an unmeasurable
+parameter is not a soft spot provided the sensitivity to it is stated. So rather
+than defending the numbers, `razor-pay uplift-sensitivity` reports which
+decisions would change if they are wrong, across a deliberately wide band —
+half to double the stated values.
+
+**Result: 8 of 18 ladder steps are sensitive; 10 are not — and the split is
+entirely explained by cost.**
+
+| | Sensitive to the belief |
+|---|---|
+| Steps costing nothing to fire (rail-side retries, `channel=none`) | 0 of 10 |
+| Steps that contact a customer (WhatsApp, SMS, email) | 8 of 8 |
+
+That is the whole pattern. Belief only decides anything where there is a cost to
+weigh it against. A retry is close enough to free that no plausible uplift makes
+it not worth trying, so being wrong about it changes nothing. A WhatsApp message
+has to earn its place, so the estimate decides — and for those steps the report
+names the break-even ticket size and how far it moves across the band.
+
+Worked example: `insufficient_funds` step 2 (payment link over WhatsApp) breaks
+even at Rs 826 under the stated belief. Halve the belief and the threshold rises
+to Rs 1,653; double it and it falls to Rs 413. Two of six reference tickets sit
+inside that range, so those are the cases where being wrong costs something.
+
+**A second question, kept separate.** The engine does not currently *rank* ladder
+steps by expected value — it only refuses steps that cannot cover their cost.
+Whether ranking would be worth building depends on whether a ranking computed
+from these beliefs survives them being wrong. Uniform scaling cannot answer that,
+since it moves every step together and leaves order untouched, so each belief is
+perturbed independently (lognormal, sigma 0.4) and the top-ranked step checked
+for churn:
+
+| Cause | Highest-EV step unchanged under perturbation |
+|---|---:|
+| `collect_expired` | 98.6% |
+| `gateway_error` | 86.0% |
+| `insufficient_funds` | 85.6% |
+| `issuer_downtime` | 84.5% |
+| `declined_unspecified` | 84.2% |
+| `instrument_invalid` | 83.3% |
+| `abandoned_no_attempt` | 72.3% |
+
+Only one ladder is robust enough that a computed ranking would be stable. At 72%
+the top step is a coin-flip away from changing, which is an argument for leaving
+ladder order as a stated policy choice rather than a computed one — and is the
+reason expected-value ranking sits in `07-next-steps.md` rather than in the
+engine.
+
+**What this does not establish.** Sensitivity is not accuracy. A stable decision
+is stable because ticket sizes dwarf action costs, not because the estimates are
+right. They remain unmeasured. What it rules out is the sharper objection — that
+the headline is an artifact of numbers chosen to produce it.
+
+---
+
+## Diagnosis accuracy, and the shape of the error
+
+Headline accuracy is one number, and one number invites the wrong reading — that
+the diagnoser is uniformly ~95% right. It is not, in two respects that matter
+more than the figure.
+
+**Where the error is.** The report splits accuracy by method:
+
+| Method | Scored | Correct | Accuracy |
+|---|---:|---:|---:|
+| deterministic | 222 | 222 | 100.0% |
+| fallback | 21 | 5 | 23.8% |
+
+The deterministic path is a table lookup on a documented Razorpay error code. It
+cannot be wrong, and reporting it inside a blended average disguises that the
+entire error budget belongs to the ambiguous slice. That is the actionable form:
+it says improve the fallback, not improve the diagnoser.
+
+**What shape the error takes.** The confusion matrix shows every misclassification
+landing on `UNKNOWN` — never on a different cause. Two errors that a single
+accuracy figure would average together are not the same error at all:
+
+- Diagnosing `insufficient_funds` as `UNKNOWN` costs a recovery. The case routes
+  to the exception list, no action fires, a human sees it.
+- Diagnosing `insufficient_funds` as `INSTRUMENT_INVALID` would cost more than
+  that. It fires a confident, specific, wrong intervention — the exact failure
+  the cause-keyed design exists to prevent.
+
+In the measured batches the second number is zero. So the residual is abstention,
+not error, and headline accuracy *understates* the safety property. The report
+computes this distinction rather than asserting it, and
+`test_report_distinguishes_abstention_from_confident_error` fails if a confident
+misdiagnosis ever appears without being called out.
+
+This is also a consequence of a deliberate choice elsewhere: the LLM's confidence
+is capped below the deterministic path, and below `CONFIDENCE_THRESHOLD` the
+engine refuses to act. A classifier that is uncertain is routed, not trusted.
+
 ---
 
 ## Statistical power

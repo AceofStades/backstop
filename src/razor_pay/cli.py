@@ -459,6 +459,51 @@ def replicate(runs, cases, leaks, control_fraction) -> None:
     click.secho(f"\nReport: reports/{stamp}.md", fg="green")
 
 
+@main.command("uplift-sensitivity")
+@click.option("--trials", default=2000, show_default=True,
+              help="Perturbation draws for the ranking check.")
+@click.option("--seed", default=0, show_default=True)
+def uplift_sensitivity(trials, seed) -> None:
+    """State the sensitivity to the one parameter that cannot be measured.
+
+    `economics.BELIEVED_UPLIFT` is asserted, not observed. Rather than defend
+    the numbers, report which decisions would change if they are wrong. Needs
+    no batch and touches no API: it reads the belief table, the playbook and
+    the cost table only.
+    """
+    from razor_pay.harness import uplift_sensitivity as us
+
+    decisions = us.decision_stability()
+    rankings = us.ranking_stability(trials=trials, seed=seed)
+
+    REPORTS.mkdir(exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("uplift_sensitivity_%Y%m%d_%H%M%S")
+    (REPORTS / f"{stamp}.md").write_text(us.render_markdown(decisions, rankings))
+    (REPORTS / f"{stamp}.json").write_text(
+        json.dumps({"decisions": decisions, "rankings": rankings}, indent=2)
+    )
+
+    fragile = [r for r in decisions if not r["stable"]]
+    click.secho("\n== Decision stability ==", bold=True)
+    click.echo(f"  ladder steps        : {len(decisions)}")
+    click.echo(f"  stable across band  : {len(decisions) - len(fragile)}")
+    click.echo(f"  sensitive to belief : {len(fragile)}")
+    for r in fragile:
+        click.echo(
+            f"    - {r['cause']} #{r['step_index']} "
+            f"({r['intervention']} / {r['channel']})"
+        )
+
+    click.secho("\n== Ranking stability ==", bold=True)
+    for r in sorted(rankings, key=lambda r: r["stability"]):
+        click.echo(
+            f"  {r['cause']:<22} top={r['baseline_top']:<28} "
+            f"unchanged {r['stability']:.1%}"
+        )
+
+    click.secho(f"\nReport: reports/{stamp}.md", fg="green")
+
+
 @main.command("demo-refusals")
 @click.option("--db", default="data/demo.db", show_default=True)
 def demo_refusals(db: str) -> None:

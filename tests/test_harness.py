@@ -372,3 +372,75 @@ def test_degraded_artifacts_are_reported_not_swallowed():
 
     clean = compute(traces, cases, {}, degraded_artifacts=0)
     assert "No degraded artifacts" in render_markdown(clean, "b1")
+
+
+def test_confusion_matrix_accounts_for_every_scored_case(tmp_path):
+    """The matrix must be a partition of the scored cases, not a sample of them."""
+    store, cases, mandate = build_batch(tmp_path, n=200)
+    traces = make_runner(store, mandate).run(cases)
+    m = compute(traces, cases, ResponseModel().describe())
+
+    total = sum(n for row in m["diagnosis_confusion"].values() for n in row.values())
+    assert total == m["diagnosis_scored"]
+
+    diagonal = sum(
+        row.get(truth, 0) for truth, row in m["diagnosis_confusion"].items()
+    )
+    assert diagonal == round(m["diagnosis_accuracy"] * m["diagnosis_scored"])
+    store.close()
+
+
+def test_accuracy_splits_by_method(tmp_path):
+    """A single accuracy figure hides that the deterministic path is a lookup table.
+
+    The split is the actionable form: it locates error in the fallback slice
+    instead of implying the diagnoser is uniformly imperfect.
+    """
+    store, cases, mandate = build_batch(tmp_path, n=200)
+    traces = make_runner(store, mandate).run(cases)
+    m = compute(traces, cases, ResponseModel().describe())
+
+    by_method = m["diagnosis_by_method"]
+    assert by_method
+    assert sum(st["scored"] for st in by_method.values()) == m["diagnosis_scored"]
+    assert sum(st["correct"] for st in by_method.values()) == round(
+        m["diagnosis_accuracy"] * m["diagnosis_scored"]
+    )
+    # A documented error code maps to a cause by table lookup; it cannot be wrong.
+    if "deterministic" in by_method:
+        det = by_method["deterministic"]
+        assert det["correct"] == det["scored"]
+    store.close()
+
+
+def test_report_distinguishes_abstention_from_confident_error(tmp_path):
+    """Failing to UNKNOWN and firing the wrong intervention are not the same error.
+
+    One routes to the exception list; the other spends money on a confident,
+    specific, wrong action. The report must not average them into one number.
+    """
+    from razor_pay.harness.metrics import render_markdown
+
+    store, cases, mandate = build_batch(tmp_path, n=200)
+    traces = make_runner(store, mandate).run(cases)
+    m = compute(traces, cases, ResponseModel().describe())
+
+    abstentions = sum(
+        n
+        for truth, row in m["diagnosis_confusion"].items()
+        for pred, n in row.items()
+        if pred != truth and pred == RootCause.UNKNOWN.value
+    )
+    confident = sum(
+        n
+        for truth, row in m["diagnosis_confusion"].items()
+        for pred, n in row.items()
+        if pred != truth and pred != RootCause.UNKNOWN.value
+    )
+    md = render_markdown(m, "batch_test")
+
+    if abstentions and not confident:
+        assert "abstention, not error" in md
+    elif confident:
+        assert "wrong cause" in md
+    store.close()

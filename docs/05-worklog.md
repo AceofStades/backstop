@@ -469,9 +469,127 @@ for. Defaults are now 400 at 40%.
 
 ---
 
+## Verified: the payment-link quota cannot be reclaimed
+
+Bug 15 left an open question — is the 30-link cap a live-object limit or a
+lifetime counter? If it counted live objects, cancelling old links would free
+budget and the live run could be re-run at scale. Worth knowing before asking
+support for anything.
+
+Probed directly rather than reasoned about:
+
+```
+links visible: 0    total_count=None
+CREATE FAILED -> ServerError test mode limit of 30 reached for payment_link
+```
+
+**The account holds zero payment links and is still blocked.** So it counts
+creations over the lifetime of the business, and no amount of cleanup recovers
+it. Three consequences:
+
+- Deleting or cancelling links is not a workaround; there is nothing to delete.
+- Rotating the API keys is not a workaround either. Keys authenticate *to* an
+  account; the quota belongs *to* the account, so new credentials for the same
+  business inherit the same exhausted counter.
+- Registering a second Razorpay account would work and was deliberately not
+  done. It is a hiring submission tied to a real identity, and 30 more links
+  would not change the statistical picture anyway — the statistic comes from
+  `replicate`. Asking support to raise the cap is the only clean path.
+
+Incidentally the probe re-confirms Bug 14: the quota arrives as a `ServerError`,
+a 5xx that is permanently true. Exactly why `retry.is_transient` consults a
+permanent-condition list before it looks at the status code.
+
+The generalisable point: an assumption about a vendor limit is cheap to test and
+expensive to be wrong about. One API call settled a question that would otherwise
+have been argued from documentation.
+
+---
+
+## Stating the sensitivity to the one unmeasurable parameter
+
+`economics.BELIEVED_UPLIFT` was always the softest thing in the repo. Every
+expected-value decision rests on it, and it cannot be measured without production
+data. The temptation was to defend the numbers. The better move — already made
+once for the control baseline — is to report what would change if they are wrong.
+
+`razor-pay uplift-sensitivity` does that across a half-to-double band. The result
+was more interesting than expected:
+
+**8 of 18 ladder steps are sensitive to the belief. All 8 cost money to fire. All
+10 free steps are stable.**
+
+That is not a coincidence, it is the mechanism: belief only decides anything when
+there is a cost to weigh it against. A rail-side retry is close enough to free
+that no plausible uplift refuses it. A WhatsApp message has to earn its place, so
+the estimate is load-bearing there and nowhere else. The report derives this
+pattern rather than asserting it — if a free step ever became sensitive, the
+prose changes, and `test_free_actions_are_never_sensitive_to_the_belief` fails.
+
+The second half was the useful one. Ranking ladder steps by expected value has
+been on the next-steps list since the economics work. Perturbing each belief
+independently and checking whether the top-ranked step holds gives:
+
+| Cause | Top step unchanged |
+|---|---:|
+| `collect_expired` | 98.6% |
+| ...five between | 83–86% |
+| `abandoned_no_attempt` | 72.3% |
+
+Only one ladder is stable enough for a computed ranking to mean anything. At 72%
+the top step is close to a coin flip. **That is an argument against building the
+feature**, and it is the first time the sensitivity analysis has talked us out of
+work rather than into it. Ladder order stays a stated policy choice, which is
+also easier to defend in an interview than a number derived from a guess.
+
+Note this module reads only the engine's belief table, never
+`response_model.UPLIFT`. Importing the latter would quietly convert a sensitivity
+analysis into a scoring against an answer key —
+`test_uplift_sensitivity_never_reads_harness_truth` parses the module's imports
+to prevent it, since a stray import is exactly the accident that would do it.
+
+---
+
+## The confusion matrix said something the accuracy figure hid
+
+Diagnosis accuracy was reported as a single percentage. Splitting it revealed two
+things that the blended number actively disguised.
+
+**First, where the error lives.** By method:
+
+| Method | Scored | Correct | Accuracy |
+|---|---:|---:|---:|
+| deterministic | 222 | 222 | 100.0% |
+| fallback | 21 | 5 | 23.8% |
+
+The deterministic path is a lookup table on a documented error code; it is right
+by construction. Averaging it with the ambiguous slice produced a number that
+described neither. The split says *improve the fallback*, which the blend did not.
+
+**Second, and more important, what shape the error takes.** Every off-diagonal
+cell in the matrix lands on `UNKNOWN`. Not one case was diagnosed as the wrong
+*cause*.
+
+Those are different failures wearing the same percentage:
+
+- Wrong-as-`UNKNOWN` routes to the exception list. It costs a recovery, and a
+  human sees it.
+- Wrong-as-another-cause fires a confident, specific, wrong intervention. It
+  costs money and customer goodwill, and nobody sees it.
+
+The second is precisely the failure the cause-keyed design exists to prevent, and
+its count is zero. So the headline *understates* the safety property: the residual
+is abstention, not error. That sentence is worth more in an interview than a
+higher accuracy number would be.
+
+The report computes the distinction instead of asserting it. If a confident
+misdiagnosis ever appears, the prose flips and names the count.
+
+---
+
 ## What the tests actually guard
 
-131 tests, but a handful carry most of the weight:
+141 tests, but a handful carry most of the weight:
 
 | Test | Invariant |
 |---|---|
@@ -492,6 +610,10 @@ for. Defaults are now 400 at 40%.
 | `test_partial_case_id_resolves_despite_underscore_wildcard` | `_` escaped in LIKE (Bug 8) |
 | `test_replication_is_deterministic` | The pooled headline is reproducible |
 | `test_degraded_artifacts_are_reported_not_swallowed` | A spent link quota is disclosed, not hidden (Bug 16) |
+| `test_uplift_sensitivity_never_reads_harness_truth` | The sensitivity analysis cannot become a scoring against ground truth |
+| `test_free_actions_are_never_sensitive_to_the_belief` | The belief is load-bearing only where an action costs something |
+| `test_confusion_matrix_accounts_for_every_scored_case` | The matrix partitions the scored cases rather than sampling them |
+| `test_report_distinguishes_abstention_from_confident_error` | A confident misdiagnosis can never be averaged away |
 
 Several are parametrized across every enum member, so adding a `RootCause`,
 `InterventionType` or `Channel` without handling it fails the suite rather than

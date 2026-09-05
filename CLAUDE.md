@@ -21,6 +21,7 @@ uv run razor-pay verify          # preflight: test-mode interlock, API reachabil
 uv run razor-pay seed --cases 400 # build a batch (creates real test-mode Orders)
 uv run razor-pay run              # run the loop, write reports/<batch>.md and .json
 uv run razor-pay replicate --runs 12  # pooled headline across independent batches
+uv run razor-pay uplift-sensitivity   # what decisions change if BELIEVED_UPLIFT is wrong
 uv run razor-pay report           # print the saved report
 uv run razor-pay audit pf_0000    # full append-only audit trail for one case
 uv run razor-pay demo-refusals    # the four gate-refusal scenarios
@@ -112,6 +113,23 @@ the same self-recovery draw in either arm.
 is counted from the ledger across every case with that `customer_ref`. Seeding draws
 from a deliberately small customer pool with a heavy tail — a wide uniform pool makes
 repeat customers vanish and silently disables this check.
+
+**An unmeasurable parameter is stated as a sensitivity, not defended.**
+`economics.BELIEVED_UPLIFT` cannot be measured without production data.
+`harness/uplift_sensitivity.py` reports which decisions change if it is wrong
+across a half-to-double band — 8 of 18 ladder steps are sensitive and all 8 cost
+money to fire, which is the mechanism rather than a coincidence. That module may
+read the engine's belief table and must never import `response_model.UPLIFT`;
+doing so converts a sensitivity analysis into a scoring against an answer key.
+`test_uplift_sensitivity_never_reads_harness_truth` parses its imports to stop it.
+
+**Diagnosis error is reported by shape, not just by size.** The report splits
+accuracy by method (the deterministic path is a lookup table and scores 100%) and
+renders a confusion matrix. What matters is that every error lands on `UNKNOWN`
+rather than on another cause: abstention routes to the exception list, whereas a
+confident wrong cause fires a specific wrong intervention. Never collapse these
+into one accuracy figure — `test_report_distinguishes_abstention_from_confident_error`
+guards the distinction.
 
 **Report incremental, never gross.** Gross recovery counts cases that would have
 recovered anyway. The control baseline is an assumption, so the headline always ships

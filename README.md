@@ -21,7 +21,7 @@ control arm:
 | **Incremental recovery** | **+24.7 pp** (95% CI of the mean +22.8 to +26.6) |
 | Between-batch spread | sd 3.3 pp, range +18.8 to +29.8 |
 | **Mean net value per batch** | **Rs 88,839** (sd Rs 20,951) |
-| Diagnosis accuracy vs ground truth | ~95% |
+| Diagnosis accuracy vs ground truth | ~95%, and every error is an abstention rather than a wrong cause |
 
 A single batch's lift is **one draw, not a result** — across seeds it ranges from
 +18.8 to +29.8 pp. Quoting whichever batch ran last invites a reviewer to re-run it
@@ -245,10 +245,11 @@ uv run razor-pay verify                          # preflight: interlock, API, le
 uv run razor-pay seed --cases 400                # creates real test-mode Orders
 uv run razor-pay run                             # runs the loop, writes reports/<batch>.md
 uv run razor-pay replicate --runs 12             # pooled headline across batches
+uv run razor-pay uplift-sensitivity              # what changes if the beliefs are wrong
 uv run razor-pay report                          # print the report
 uv run razor-pay audit pf_0000                   # full audit trail for one case
 uv run razor-pay demo-refusals                   # the four refusal scenarios
-uv run pytest                                    # 131 tests
+uv run pytest                                    # 141 tests
 ```
 
 Add `--simulated` to `seed` and `run` to skip Razorpay entirely, and `--no-llm` to
@@ -262,6 +263,30 @@ experiment is not evidence. The batch is powered from roughly 200 cases up.
 
 Even so, one powered batch is one draw. `replicate` runs independent batches and
 pools them, which is what the headline above reports.
+
+---
+
+## Two things the reports say that a single number would hide
+
+**The engine's beliefs are asserted, so the sensitivity to them is stated.**
+`economics.BELIEVED_UPLIFT` cannot be measured without production data. Rather
+than defend it, `razor-pay uplift-sensitivity` reports what would change if it is
+wrong, across a half-to-double band. 8 of 18 ladder steps are sensitive — and all
+8 are steps that cost money to fire, while all 10 free steps are stable. Belief
+is load-bearing only where there is a cost to weigh it against.
+
+The same analysis argued *against* a planned feature: ranking ladder steps by
+expected value is only 72–86% stable under perturbation for six of seven ladders,
+so ladder order stays an explicit policy choice rather than a computed one.
+
+**Every diagnosis error is an abstention, not a wrong answer.** Accuracy splits
+100% on the deterministic path (a lookup table on a documented error code) against
+a much lower figure on the ambiguous fallback slice — so the whole error budget
+belongs to one place. And the confusion matrix shows every misclassification
+landing on `UNKNOWN`, never on a different cause. Nothing is diagnosed confidently
+and wrongly; the residual routes to the exception list where a human sees it. The
+headline accuracy understates the safety property, and the report computes that
+distinction rather than claiming it.
 
 ---
 

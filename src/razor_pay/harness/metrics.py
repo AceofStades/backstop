@@ -60,6 +60,11 @@ def compute(
     diag_correct = 0
     diag_scored = 0
     diag_methods: dict[str, int] = {}
+    # truth -> predicted -> count. A single accuracy figure hides which causes
+    # get confused with which, and that is the actionable part: it locates the
+    # error in a specific slice of the diagnoser rather than spreading it.
+    diag_confusion: dict[str, dict[str, int]] = {}
+    diag_by_method: dict[str, dict[str, int]] = {}
     exceptions: list[dict] = []
 
     for t in traces:
@@ -82,8 +87,16 @@ def compute(
             truth = by_id[t.case_id].injected_cause
             if truth is not None:
                 diag_scored += 1
-                if truth == t.diagnosed_cause:
+                hit = truth == t.diagnosed_cause
+                if hit:
                     diag_correct += 1
+                row = diag_confusion.setdefault(truth.value, {})
+                row[t.diagnosed_cause.value] = row.get(t.diagnosed_cause.value, 0) + 1
+                by_m = diag_by_method.setdefault(
+                    t.diagnosis_method, {"scored": 0, "correct": 0}
+                )
+                by_m["scored"] += 1
+                by_m["correct"] += int(hit)
 
             unresolved = (
                 t.diagnosed_cause is RootCause.UNKNOWN
@@ -157,6 +170,8 @@ def compute(
         "diagnosis_accuracy": diag_correct / diag_scored if diag_scored else 0.0,
         "diagnosis_scored": diag_scored,
         "diagnosis_methods": diag_methods,
+        "diagnosis_confusion": diag_confusion,
+        "diagnosis_by_method": diag_by_method,
         "exceptions": exceptions,
         "response_params": response_params,
     }
@@ -164,6 +179,127 @@ def compute(
 
 def _rs(paise: int) -> str:
     return f"Rs {paise / 100:,.0f}"
+
+
+def _abbr(cause: str) -> str:
+    return "".join(w[0] for w in cause.split("_")).upper()
+
+
+def _diagnosis_section(m: dict) -> list[str]:
+    """Accuracy, then where the error actually is.
+
+    A single accuracy number invites the wrong reading -- that the diagnoser is
+    uniformly 95% right. It is not: the deterministic path is a lookup table on
+    documented error codes and is right by construction, so essentially all
+    error lives in the LLM-fallback slice. The per-method split says so
+    directly, and the matrix says which causes the fallback confuses.
+    """
+    confusion: dict[str, dict[str, int]] = m.get("diagnosis_confusion") or {}
+    by_method: dict[str, dict[str, int]] = m.get("diagnosis_by_method") or {}
+
+    lines = [
+        "## Diagnosis",
+        "",
+        f"- Accuracy vs injected ground truth: {m['diagnosis_accuracy']:.1%} "
+        f"over {m['diagnosis_scored']} scored cases",
+        f"- Methods used: {m['diagnosis_methods']}",
+        "",
+    ]
+
+    if by_method:
+        lines += [
+            "### Accuracy by method",
+            "",
+            "| Method | Scored | Correct | Accuracy |",
+            "|---|---:|---:|---:|",
+        ]
+        for method, st in sorted(by_method.items(), key=lambda kv: -kv[1]["scored"]):
+            acc = st["correct"] / st["scored"] if st["scored"] else 0.0
+            lines.append(
+                f"| {method} | {st['scored']} | {st['correct']} | {acc:.1%} |"
+            )
+        lines.append("")
+
+    if confusion:
+        causes = sorted(
+            set(confusion) | {p for row in confusion.values() for p in row}
+        )
+        lines += [
+            "### Confusion matrix",
+            "",
+            "Rows are the injected truth, columns the diagnosis. Off-diagonal",
+            "cells are the errors.",
+            "",
+            "| truth \\ predicted | " + " | ".join(_abbr(c) for c in causes) + " |",
+            "|---" * (len(causes) + 1) + "|",
+        ]
+        for truth in causes:
+            row = confusion.get(truth, {})
+            cells = []
+            for pred in causes:
+                n = row.get(pred, 0)
+                if not n:
+                    cells.append(".")
+                elif pred == truth:
+                    cells.append(f"**{n}**")
+                else:
+                    cells.append(str(n))
+            lines.append(f"| {_abbr(truth)} | " + " | ".join(cells) + " |")
+
+        lines += [
+            "",
+            "Legend: " + ", ".join(f"`{_abbr(c)}` {c}" for c in causes) + ".",
+            "",
+        ]
+
+        errors = sorted(
+            (
+                (n, truth, pred)
+                for truth, row in confusion.items()
+                for pred, n in row.items()
+                if pred != truth
+            ),
+            reverse=True,
+        )
+        if errors:
+            lines += ["Most frequent confusions:", ""]
+            lines += [
+                f"- `{truth}` diagnosed as `{pred}` ({n}x)"
+                for n, truth, pred in errors[:5]
+            ]
+            lines.append("")
+
+            # The shape of the error matters more than its size. An error that
+            # lands on UNKNOWN costs a recovery: the case routes to the
+            # exception list and no action fires. An error that lands on the
+            # wrong *cause* costs more than that -- it fires a confident,
+            # specific, wrong intervention, which is the failure the whole
+            # cause-keyed design exists to avoid. Distinguish them.
+            confident = [e for e in errors if e[2] != RootCause.UNKNOWN.value]
+            if not confident:
+                lines += [
+                    "**Every misclassification is a confusion with `unknown`, not "
+                    "with another cause.** No case was diagnosed confidently and "
+                    "wrongly. The diagnoser's whole error budget is spent failing "
+                    "to the exception list, where a human sees it, rather than on "
+                    "firing a specific wrong intervention. Headline accuracy "
+                    "therefore understates the safety property: the residual "
+                    f"{1 - m['diagnosis_accuracy']:.1%} is abstention, not error.",
+                    "",
+                ]
+            else:
+                n_conf = sum(e[0] for e in confident)
+                lines += [
+                    f"**{n_conf} case(s) were diagnosed as the wrong cause rather "
+                    "than as `unknown`.** These are the expensive errors: a wrong "
+                    "cause fires a confident, specific, wrong intervention instead "
+                    "of routing to the exception list.",
+                    "",
+                ]
+        else:
+            lines += ["No misclassifications in this batch.", ""]
+
+    return lines
 
 
 def render_markdown(m: dict, batch_id: str, sensitivity: list[dict] | None = None) -> str:
@@ -203,12 +339,7 @@ def render_markdown(m: dict, batch_id: str, sensitivity: list[dict] | None = Non
         f"(reported, not optimised against -- see net value above)",
         f"- Contacts deferred for the RBI window: {m['deferrals']}",
         "",
-        "## Diagnosis",
-        "",
-        f"- Accuracy vs injected ground truth: {m['diagnosis_accuracy']:.1%} "
-        f"over {m['diagnosis_scored']} scored cases",
-        f"- Methods used: {m['diagnosis_methods']}",
-        "",
+        *_diagnosis_section(m),
         "## Gate activity",
         "",
         f"- Contacts deferred to respect the RBI window: {m['deferrals']}",

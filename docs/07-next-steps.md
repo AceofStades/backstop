@@ -73,23 +73,33 @@ API reports provider status; a smarter ladder would route to an alternate method
 when the original issuer is known-down. The taxonomy already carries a `transient`
 flag that nothing reads yet.
 
-### 6. Measure the uplift parameters instead of asserting them
+### 6. ~~Measure the uplift parameters instead of asserting them~~ — DONE
 
-`UPLIFT` encodes beliefs about which interventions work. Everything downstream ranks
-on those numbers. They cannot be measured without production data, but the sweep
-approach used for the baseline could be extended: report how the *ranking* of
-interventions changes across plausible uplift ranges, and identify which policy
-choices are robust to the assumption and which are not.
+Built as `razor-pay uplift-sensitivity`. The parameter still cannot be measured
+without production data, so the sensitivity to it is stated instead — the same move
+already made for the control baseline.
 
-That converts an unmeasurable parameter into a stated sensitivity, which is the same
-move already made for the baseline.
+8 of 18 ladder steps turn out to be sensitive to the belief, and all 8 are steps
+that cost money to fire; all 10 free steps are stable. Belief is load-bearing only
+where there is a cost to weigh it against.
 
-### 7. Diagnoser confusion matrix
+**It also talked us out of item 2's remaining half.** Ranking stability under
+independent perturbation runs 72–86% for six of seven ladders. A computed ranking
+built on numbers that unstable would be worse than a stated policy choice, so
+EV-ranking is now *deliberately not doing* rather than pending. See
+[`05-worklog.md`](05-worklog.md).
 
-Accuracy is reported as a single 95.4%. A confusion matrix would show *which* causes
-get confused, which is more actionable — and would likely reveal that essentially
-all error comes from the LLM-fallback slice, since the deterministic path is a
-lookup table.
+### 7. ~~Diagnoser confusion matrix~~ — DONE
+
+The prediction was right and understated. The deterministic path scores 100% — it
+is a lookup table on a documented error code — and the entire error budget belongs
+to the ambiguous slice.
+
+The matrix showed something the accuracy figure hid: **every misclassification lands
+on `UNKNOWN`, never on another cause.** No case is diagnosed confidently and wrongly.
+The residual is abstention, routed to the exception list where a human sees it,
+rather than a wrong intervention fired with confidence. Headline accuracy therefore
+understates the safety property.
 
 ---
 
@@ -109,6 +119,18 @@ matters and is demonstrated; swapping placeholder ids for real ones is config.
 **Multi-merchant support.** The mandate is already merchant-scoped and the gate
 checks it. Actually running several merchants adds surface without adding evidence.
 
+**Expected-value ranking of ladder steps.** Moved here from "high value" once the
+sensitivity analysis measured how unstable such a ranking would be (72–86% for six
+of seven ladders). A computed order built on beliefs that shaky is harder to defend
+than an explicit policy choice, not easier. Revisit only with production data behind
+the uplift estimates.
+
+**A second Razorpay account to reset the payment-link quota.** The cap counts
+creations over the lifetime of a business and is not reclaimable by deleting links
+or rotating keys — verified, see [`05-worklog.md`](05-worklog.md). A fresh account
+would work and is the wrong move: this is a submission tied to a real identity, and
+30 more links would not change the statistic, which comes from `replicate` anyway.
+
 ---
 
 ## If time is very short
@@ -121,7 +143,8 @@ repair. In order:
    probed, and the answer is strong if it arrives unprompted.
 2. **Ask Razorpay support to raise the payment-link cap.** Cheap, and it would let
    the live run cover link-type interventions too.
-3. **Webhook ingestion** (#4) if there is genuine time left.
+3. **Webhook ingestion** (#4) if there is genuine time left. It is the only
+   remaining item that changes the architecture rather than the reporting.
 
 Do not spend the remaining time on new leak adapters. Three is already enough to
 demonstrate the abstraction, and a fourth adds surface without adding evidence.
